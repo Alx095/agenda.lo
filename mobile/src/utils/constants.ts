@@ -1,23 +1,24 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const LOCAL_API_URL = 'http://localhost:3000';
+export const DEFAULT_API_URL =
+  'https://agendalo-production-b282.up.railway.app';
 
 function resolveApiUrl(): string {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/^["']|["']$/g, '');
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
   const extraUrl =
     typeof Constants.expoConfig?.extra?.apiUrl === 'string'
-      ? Constants.expoConfig.extra.apiUrl.trim().replace(/^["']|["']$/g, '')
+      ? Constants.expoConfig.extra.apiUrl.trim()
       : undefined;
 
-  const candidate = envUrl || extraUrl;
-
-  if (!candidate || !candidate.startsWith('http')) {
-    return LOCAL_API_URL;
-  }
+  const candidate = envUrl || extraUrl || DEFAULT_API_URL;
 
   if (Platform.OS !== 'web' && candidate.includes('localhost')) {
-    return LOCAL_API_URL;
+    return DEFAULT_API_URL;
+  }
+
+  if (!candidate.startsWith('http')) {
+    return DEFAULT_API_URL;
   }
 
   return candidate;

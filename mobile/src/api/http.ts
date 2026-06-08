@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { API_URL } from '../utils/constants';
+import { API_URL, DEFAULT_API_URL } from '../utils/constants';
 import { getAccessToken } from './tokenManager';
 
 export class ApiError extends Error {
@@ -17,11 +17,8 @@ type HttpOptions = RequestInit & {
 };
 
 function getBaseUrl(): string {
-  if (!API_URL?.startsWith('http')) {
-    throw new Error('EXPO_PUBLIC_API_URL no está configurada correctamente.');
-  }
-
-  return API_URL.replace(/\/$/, '');
+  const base = API_URL?.startsWith('http') ? API_URL : DEFAULT_API_URL;
+  return base.replace(/\/$/, '');
 }
 
 export function buildUrl(path: string): string {
@@ -56,7 +53,7 @@ function mapFetchError(error: unknown): Error {
 
   if (Platform.OS === 'web') {
     return new Error(
-      `No se pudo conectar (web/CORS). Configura CORS_ORIGIN en Render. Detalle: ${detail}`,
+      `No se pudo conectar (web/CORS). Configura CORS_ORIGIN=* en Railway. Detalle: ${detail}`,
     );
   }
 
