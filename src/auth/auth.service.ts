@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -7,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { Role, User } from '../generated/prisma/client';
+import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -17,6 +19,7 @@ export type SafeUser = {
   name: string;
   email: string;
   role: Role;
+  emailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -25,6 +28,15 @@ export type AuthResponse = {
   access_token: string;
   refresh_token: string;
   user: SafeUser;
+};
+
+export type RegisterResponse = {
+  message: string;
+  email: string;
+};
+
+export type MessageResponse = {
+  message: string;
 };
 
 type AccessTokenPayload = {
@@ -39,16 +51,23 @@ type RefreshTokenPayload = {
   type: 'refresh';
 };
 
+type EmailVerificationPayload = {
+  sub: string;
+  type: 'email_verification';
+};
+
 @Injectable()
 export class AuthService {
   private readonly saltRounds = 10;
   private readonly accessTokenExpiresIn: string;
   private readonly refreshTokenExpiresIn: string;
+  private readonly emailVerificationExpiresIn = '24h';
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) {
     this.accessTokenExpiresIn = this.configService.getOrThrow<string>(
       'JWT_ACCESS_EXPIRES_IN',
@@ -58,7 +77,7 @@ export class AuthService {
     );
   }
 
-  async register(registerDto: RegisterDto): Promise<AuthResponse> {
+  async register(registerDto: RegisterDto): Promise<RegisterResponse> {
     const email = registerDto.email.toLowerCase();
 
     const existingUser = await this.prisma.user.findUnique({
@@ -79,10 +98,17 @@ export class AuthService {
         name: registerDto.name,
         email,
         password: hashedPassword,
+        emailVerified: false,
       },
     });
 
-    return this.buildAuthResponse(user);
+    await this.sendVerificationEmailSafe(user);
+
+    return {
+      message:
+        'Registro exitoso. Revisa tu correo y confirma tu cuenta antes de iniciar sesión.',
+      email: user.email,
+    };
   }
 
   async login(loginDto: LoginDto): Promise<AuthResponse> {
@@ -105,7 +131,54 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    this.assertEmailVerified(user);
+
     return this.buildAuthResponse(user);
+  }
+
+  async verifyEmail(token: string): Promise<AuthResponse> {
+    const payload = this.verifyEmailVerificationToken(token);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired verification token');
+    }
+
+    if (user.emailVerified) {
+      return this.buildAuthResponse(user);
+    }
+
+    const verifiedUser = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true },
+    });
+
+    return this.buildAuthResponse(verifiedUser);
+  }
+
+  async resendVerificationEmail(email: string): Promise<MessageResponse> {
+    const normalizedEmail = email.toLowerCase();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user || user.emailVerified) {
+      return {
+        message:
+          'Si el correo existe y no está verificado, recibirás un nuevo enlace.',
+      };
+    }
+
+    await this.sendVerificationEmailSafe(user);
+
+    return {
+      message:
+        'Si el correo existe y no está verificado, recibirás un nuevo enlace.',
+    };
   }
 
   async refresh(refreshTokenDto: RefreshTokenDto): Promise<AuthResponse> {
@@ -128,6 +201,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    this.assertEmailVerified(user);
+
     return this.buildAuthResponse(user);
   }
 
@@ -136,6 +211,79 @@ export class AuthService {
       where: { id: userId },
       data: { refreshTokenHash: null },
     });
+  }
+
+  private async sendVerificationEmailSafe(user: User): Promise<void> {
+    const token = this.signEmailVerificationToken(user.id);
+    const verificationUrl = this.buildVerificationUrl(token);
+
+    const sent = await this.emailService.sendEmailVerificationEmail({
+      to: user.email,
+      userName: user.name,
+      verificationUrl,
+    });
+
+    if (!sent) {
+      this.loggerWarnVerificationLink(user.email, verificationUrl);
+    }
+  }
+
+  private loggerWarnVerificationLink(email: string, verificationUrl: string) {
+    if (this.configService.get<string>('NODE_ENV') !== 'production') {
+      console.log(
+        `[Auth] Verification link for ${email}: ${verificationUrl}`,
+      );
+    }
+  }
+
+  private buildVerificationUrl(token: string): string {
+    const appUrl =
+      this.configService.get<string>('APP_URL')?.trim() ||
+      `http://localhost:${this.configService.get<string>('PORT') ?? '3000'}`;
+
+    return `${appUrl.replace(/\/$/, '')}/auth/verify-email?token=${encodeURIComponent(token)}`;
+  }
+
+  private signEmailVerificationToken(userId: string): string {
+    const payload: EmailVerificationPayload = {
+      sub: userId,
+      type: 'email_verification',
+    };
+
+    return this.jwtService.sign(payload, {
+      secret: this.configService.getOrThrow<string>('JWT_SECRET'),
+      expiresIn: this.emailVerificationExpiresIn as JwtSignOptions['expiresIn'],
+    });
+  }
+
+  private verifyEmailVerificationToken(
+    token: string,
+  ): EmailVerificationPayload {
+    try {
+      const payload = this.jwtService.verify<EmailVerificationPayload>(token, {
+        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
+      });
+
+      if (payload.type !== 'email_verification') {
+        throw new BadRequestException('Invalid or expired verification token');
+      }
+
+      return payload;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new BadRequestException('Invalid or expired verification token');
+    }
+  }
+
+  private assertEmailVerified(user: User): void {
+    if (!user.emailVerified) {
+      throw new UnauthorizedException(
+        'Debes confirmar tu correo antes de iniciar sesión',
+      );
+    }
   }
 
   private async buildAuthResponse(user: User): Promise<AuthResponse> {
@@ -206,6 +354,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role,
+      emailVerified: user.emailVerified,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

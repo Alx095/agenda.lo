@@ -17,6 +17,15 @@ export type AuthResponse = {
   user: User;
 };
 
+export type RegisterResponse = {
+  message: string;
+  email: string;
+};
+
+export type MessageResponse = {
+  message: string;
+};
+
 export type RefreshTokenPayload = {
   refresh_token: string;
 };

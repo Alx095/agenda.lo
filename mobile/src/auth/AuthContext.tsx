@@ -19,7 +19,7 @@ import {
   refreshRequest,
   registerRequest,
 } from './auth.api';
-import { LoginCredentials, RegisterCredentials } from './auth.types';
+import { LoginCredentials, RegisterCredentials, RegisterResponse } from './auth.types';
 import {
   clearTokens,
   getStoredTokens,
@@ -33,7 +33,7 @@ type AuthContextValue = {
   isLoading: boolean;
   isSubmitting: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
-  register: (credentials: RegisterCredentials) => Promise<void>;
+  register: (credentials: RegisterCredentials) => Promise<RegisterResponse>;
   logout: () => Promise<void>;
 };
 
@@ -154,19 +154,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setIsSubmitting(true);
 
       try {
-        const response = await registerRequest(credentials);
-        await applyAuthSession(
-          response.access_token,
-          response.refresh_token,
-          response.user,
-        );
+        return await registerRequest(credentials);
       } catch (error) {
         throw new Error(getErrorMessage(error, 'No se pudo registrar el usuario'));
       } finally {
         setIsSubmitting(false);
       }
     },
-    [applyAuthSession],
+    [],
   );
 
   const logout = useCallback(async () => {

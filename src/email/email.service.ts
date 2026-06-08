@@ -9,6 +9,12 @@ type SendAppointmentConfirmationParams = {
   appointment: Appointment;
 };
 
+type SendEmailVerificationParams = {
+  to: string;
+  userName: string;
+  verificationUrl: string;
+};
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -112,6 +118,77 @@ export class EmailService {
         `Failed to send appointment confirmation email to ${params.to}`,
         error instanceof Error ? error.stack : undefined,
       );
+    }
+  }
+
+  async sendEmailVerificationEmail(
+    params: SendEmailVerificationParams,
+  ): Promise<boolean> {
+    if (!this.resend || !this.fromEmail) {
+      this.logger.warn(
+        `Email verification skipped for ${params.to}: email not configured`,
+      );
+      return false;
+    }
+
+    const subject = 'Confirma tu correo en Agenda.lo';
+    const text = [
+      `Hola ${params.userName},`,
+      '',
+      'Gracias por registrarte en Agenda.lo.',
+      'Confirma tu correo haciendo clic en este enlace:',
+      params.verificationUrl,
+      '',
+      'El enlace expira en 24 horas.',
+      '',
+      'Si no creaste esta cuenta, ignora este mensaje.',
+      '',
+      '— Agenda.lo',
+    ].join('\n');
+
+    const html = `
+      <p>Hola <strong>${params.userName}</strong>,</p>
+      <p>Gracias por registrarte en <strong>Agenda.lo</strong>.</p>
+      <p>Confirma tu correo haciendo clic en el botón:</p>
+      <p>
+        <a href="${params.verificationUrl}" style="background:#2563EB;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">
+          Confirmar correo
+        </a>
+      </p>
+      <p>O copia este enlace en tu navegador:</p>
+      <p><a href="${params.verificationUrl}">${params.verificationUrl}</a></p>
+      <p>El enlace expira en 24 horas.</p>
+      <p>— Agenda.lo</p>
+    `.trim();
+
+    try {
+      this.logger.log(`Sending email verification to ${params.to}`);
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: params.to,
+        subject,
+        text,
+        html,
+      });
+
+      if (error) {
+        this.logger.error(
+          `Failed to send verification email to ${params.to}: ${error.message} (code: ${error.name})`,
+        );
+        return false;
+      }
+
+      this.logger.log(
+        `Verification email sent to ${params.to} (resendId: ${data?.id ?? 'unknown'})`,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to send verification email to ${params.to}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return false;
     }
   }
 }

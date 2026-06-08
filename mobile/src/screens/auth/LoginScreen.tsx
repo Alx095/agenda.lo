@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../auth/AuthContext';
+import { resendVerificationRequest } from '../../auth/auth.api';
 import { ScreenPlaceholder } from '../../components/ScreenPlaceholder';
 import { AuthStackParamList } from '../../types/navigation.types';
 import { API_URL } from '../../utils/constants';
@@ -20,9 +21,15 @@ export function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+
+  const showResendVerification =
+    Boolean(error?.toLowerCase().includes('confirmar')) && Boolean(email.trim());
 
   const handleLogin = async () => {
     setError(null);
+    setInfo(null);
 
     try {
       await login({ email: email.trim().toLowerCase(), password });
@@ -32,6 +39,25 @@ export function LoginScreen({ navigation }: Props) {
           ? loginError.message
           : 'No se pudo iniciar sesión',
       );
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setError(null);
+    setInfo(null);
+    setIsResending(true);
+
+    try {
+      const response = await resendVerificationRequest(email.trim().toLowerCase());
+      setInfo(response.message);
+    } catch (resendError) {
+      setError(
+        resendError instanceof Error
+          ? resendError.message
+          : 'No se pudo reenviar el correo de verificación',
+      );
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -60,6 +86,21 @@ export function LoginScreen({ navigation }: Props) {
         {__DEV__ ? <Text style={styles.debug}>API: {API_URL}</Text> : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {info ? <Text style={styles.info}>{info}</Text> : null}
+
+        {showResendVerification ? (
+          <Pressable
+            style={[styles.secondaryButton, isResending && styles.buttonDisabled]}
+            onPress={() => void handleResendVerification()}
+            disabled={isResending}
+          >
+            {isResending ? (
+              <ActivityIndicator color="#2563EB" />
+            ) : (
+              <Text style={styles.secondaryButtonText}>Reenviar correo de verificación</Text>
+            )}
+          </Pressable>
+        ) : null}
 
         <Pressable
           style={[styles.button, isSubmitting && styles.buttonDisabled]}
@@ -118,6 +159,23 @@ const styles = StyleSheet.create({
   error: {
     color: '#DC2626',
     fontSize: 14,
+  },
+  info: {
+    color: '#2563EB',
+    fontSize: 14,
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  secondaryButtonText: {
+    color: '#2563EB',
+    fontSize: 15,
+    fontWeight: '600',
   },
   debug: {
     color: '#64748B',

@@ -22,6 +22,7 @@ export function RegisterScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState('comprobando...');
 
   useEffect(() => {
@@ -32,13 +33,20 @@ export function RegisterScreen({ navigation }: Props) {
 
   const handleRegister = async () => {
     setError(null);
+    setSuccess(null);
+
+    if (!name.trim() || !email.trim() || !password) {
+      setError('Completa todos los campos obligatorios');
+      return;
+    }
 
     try {
-      await register({
+      const response = await register({
         name: name.trim(),
         email: email.trim().toLowerCase(),
         password,
       });
+      setSuccess(response.message);
     } catch (registerError) {
       setError(
         registerError instanceof Error
@@ -82,19 +90,29 @@ export function RegisterScreen({ navigation }: Props) {
           Estado: {apiStatus}
         </Text>
 
+        {success ? <Text style={styles.success}>{success}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={() => void handleRegister()}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.buttonText}>Registrarse</Text>
-          )}
-        </Pressable>
+        {!success ? (
+          <Pressable
+            style={[styles.button, isSubmitting && styles.buttonDisabled]}
+            onPress={() => void handleRegister()}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.buttonText}>Registrarse</Text>
+            )}
+          </Pressable>
+        ) : (
+          <Pressable
+            style={styles.button}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.buttonText}>Ir a iniciar sesión</Text>
+          </Pressable>
+        )}
 
         <Pressable onPress={() => navigation.navigate('Login')}>
           <Text style={styles.link}>Ya tengo cuenta</Text>
@@ -137,6 +155,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     marginTop: 8,
+  },
+  success: {
+    color: '#16A34A',
+    fontSize: 14,
+    marginBottom: 8,
   },
   error: {
     color: '#DC2626',
