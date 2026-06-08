@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Appointment, AppointmentStatus, Prisma } from '../generated/prisma/client';
+import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppointmentQueryDto } from './dto/appointment-query.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -12,13 +14,18 @@ import { PaginatedAppointmentsResponse } from './types/paginated-appointments.ty
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AppointmentsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
 
   async create(
     userId: string,
     createAppointmentDto: CreateAppointmentDto,
   ): Promise<Appointment> {
-    return this.prisma.appointment.create({
+    const appointment = await this.prisma.appointment.create({
       data: {
         title: createAppointmentDto.title,
         description: createAppointmentDto.description,
@@ -29,6 +36,44 @@ export class AppointmentsService {
         userId,
       },
     });
+
+    void this.sendConfirmationEmailSafe(userId, appointment);
+
+    return appointment;
+  }
+
+  private async sendConfirmationEmailSafe(
+    userId: string,
+    appointment: Appointment,
+  ): Promise<void> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, name: true },
+      });
+
+      if (!user?.email) {
+        this.logger.warn(
+          `Skipping confirmation email for appointment ${appointment.id}: user has no email`,
+        );
+        return;
+      }
+
+      this.logger.log(
+        `Preparing confirmation email for appointment ${appointment.id} → ${user.email}`,
+      );
+
+      await this.emailService.sendAppointmentConfirmationEmail({
+        to: user.email,
+        userName: user.name,
+        appointment,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Appointment ${appointment.id} created but confirmation email failed`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 
   async findAll(
