@@ -5,6 +5,13 @@ export function getCorsOptions(): CorsOptions {
   const corsOrigin = process.env.CORS_ORIGIN?.trim();
 
   if (corsOrigin) {
+    if (corsOrigin === '*') {
+      return {
+        origin: true,
+        credentials: true,
+      };
+    }
+
     return {
       origin: corsOrigin
         .split(',')
