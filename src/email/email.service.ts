@@ -23,7 +23,9 @@ export class EmailService {
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('RESEND_API_KEY')?.trim();
-    const fromEmail = this.configService.get<string>('EMAIL_FROM')?.trim();
+    const fromEmail = this.normalizeFromEmail(
+      this.configService.get<string>('EMAIL_FROM'),
+    );
 
     if (apiKey && fromEmail) {
       this.resend = new Resend(apiKey);
@@ -190,5 +192,20 @@ export class EmailService {
       );
       return false;
     }
+  }
+
+  /** Accepts `onboarding@resend.dev` or `Agenda.lo <onboarding@resend.dev>`. */
+  private normalizeFromEmail(raw: string | undefined): string | null {
+    const value = raw?.trim();
+    if (!value) {
+      return null;
+    }
+
+    const bracketMatch = value.match(/<([^>]+)>/);
+    if (bracketMatch?.[1]) {
+      return bracketMatch[1].trim();
+    }
+
+    return value;
   }
 }

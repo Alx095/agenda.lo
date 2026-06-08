@@ -1,22 +1,20 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../../auth/AuthContext';
 import { resendVerificationRequest } from '../../auth/auth.api';
-import { ScreenPlaceholder } from '../../components/ScreenPlaceholder';
+import { AppButton } from '../../components/ui/AppButton';
+import { AppInput } from '../../components/ui/AppInput';
+import { AppScreen, AuthHeader } from '../../components/ui/AppScreen';
 import { AuthStackParamList } from '../../types/navigation.types';
+import { useTheme } from '../../theme/ThemeContext';
 import { API_URL } from '../../utils/constants';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export function LoginScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { login, isSubmitting } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -62,22 +60,27 @@ export function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <ScreenPlaceholder
-      title="Login"
-      subtitle="Inicia sesión para gestionar tus citas."
+    <AppScreen
+      hero={
+        <AuthHeader
+          title="Inicia sesión"
+          subtitle="Gestiona las citas de tu negocio."
+        />
+      }
+      contentStyle={styles.form}
     >
       <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
+        <AppInput
+          label="Email"
+          placeholder="tu@email.com"
           autoCapitalize="none"
           keyboardType="email-address"
           value={email}
           onChangeText={setEmail}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
+        <AppInput
+          label="Contraseña"
+          placeholder="••••••••"
           secureTextEntry
           value={password}
           onChangeText={setPassword}
@@ -89,97 +92,64 @@ export function LoginScreen({ navigation }: Props) {
         {info ? <Text style={styles.info}>{info}</Text> : null}
 
         {showResendVerification ? (
-          <Pressable
-            style={[styles.secondaryButton, isResending && styles.buttonDisabled]}
+          <AppButton
+            label="Reenviar correo de verificación"
+            variant="secondary"
             onPress={() => void handleResendVerification()}
-            disabled={isResending}
-          >
-            {isResending ? (
-              <ActivityIndicator color="#2563EB" />
-            ) : (
-              <Text style={styles.secondaryButtonText}>Reenviar correo de verificación</Text>
-            )}
-          </Pressable>
+            loading={isResending}
+          />
         ) : null}
 
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
+        <AppButton
+          label="Iniciar sesión"
           onPress={() => void handleLogin()}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.buttonText}>Iniciar sesión</Text>
-          )}
-        </Pressable>
+          loading={isSubmitting}
+        />
 
-        <Pressable onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.link}>Crear cuenta</Text>
-        </Pressable>
+        <View style={styles.links}>
+          <Pressable onPress={() => navigation.navigate('Register')}>
+            <Text style={styles.link}>Crear cuenta</Text>
+          </Pressable>
+          <Pressable onPress={() => navigation.navigate('VerifyEmail')}>
+            <Text style={styles.linkMuted}>Ya tengo el código de verificación</Text>
+          </Pressable>
+        </View>
       </View>
-    </ScreenPlaceholder>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>['colors']) =>
+  StyleSheet.create({
   form: {
+    paddingHorizontal: 28,
+    gap: 16,
+  },
+  links: {
     gap: 12,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  link: {
-    color: '#2563EB',
-    fontSize: 15,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  error: {
-    color: '#DC2626',
-    fontSize: 14,
-  },
-  info: {
-    color: '#2563EB',
-    fontSize: 14,
-  },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: '#2563EB',
-    paddingVertical: 12,
-    borderRadius: 10,
     alignItems: 'center',
     marginTop: 4,
   },
-  secondaryButtonText: {
-    color: '#2563EB',
-    fontSize: 15,
+  link: {
+    color: colors.text,
+    fontSize: 14,
     fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  linkMuted: {
+    color: colors.textMuted,
+    fontSize: 14,
+  },
+  error: {
+    color: colors.danger,
+    fontSize: 14,
+  },
+  info: {
+    color: colors.primary,
+    fontSize: 14,
   },
   debug: {
-    color: '#64748B',
+    color: colors.textSoft,
     fontSize: 12,
-    marginBottom: 4,
   },
-});
+  });

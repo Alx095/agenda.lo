@@ -20,6 +20,7 @@ export type AuthResponse = {
 export type RegisterResponse = {
   message: string;
   email: string;
+  emailSent?: boolean;
 };
 
 export type MessageResponse = {

@@ -7,6 +7,10 @@ const apiUrl =
 module.exports = {
   expo: {
     ...appJson.expo,
+    plugins: [
+      ...(appJson.expo.plugins ?? []),
+      '@react-native-community/datetimepicker',
+    ],
     extra: {
       apiUrl,
       eas: {

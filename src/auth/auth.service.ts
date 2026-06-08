@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -33,6 +34,7 @@ export type AuthResponse = {
 export type RegisterResponse = {
   message: string;
   email: string;
+  emailSent: boolean;
 };
 
 export type MessageResponse = {
@@ -58,6 +60,7 @@ type EmailVerificationPayload = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly saltRounds = 10;
   private readonly accessTokenExpiresIn: string;
   private readonly refreshTokenExpiresIn: string;
@@ -102,12 +105,14 @@ export class AuthService {
       },
     });
 
-    await this.sendVerificationEmailSafe(user);
+    const emailSent = await this.sendVerificationEmailSafe(user);
 
     return {
-      message:
-        'Registro exitoso. Revisa tu correo y confirma tu cuenta antes de iniciar sesión.',
+      message: emailSent
+        ? 'Registro exitoso. Revisa tu correo y confirma tu cuenta antes de iniciar sesión.'
+        : 'Registro exitoso, pero no pudimos enviar el correo de verificación. Usa "Reenviar correo" o contacta soporte.',
       email: user.email,
+      emailSent,
     };
   }
 
@@ -213,7 +218,7 @@ export class AuthService {
     });
   }
 
-  private async sendVerificationEmailSafe(user: User): Promise<void> {
+  private async sendVerificationEmailSafe(user: User): Promise<boolean> {
     const token = this.signEmailVerificationToken(user.id);
     const verificationUrl = this.buildVerificationUrl(token);
 
@@ -224,16 +229,12 @@ export class AuthService {
     });
 
     if (!sent) {
-      this.loggerWarnVerificationLink(user.email, verificationUrl);
-    }
-  }
-
-  private loggerWarnVerificationLink(email: string, verificationUrl: string) {
-    if (this.configService.get<string>('NODE_ENV') !== 'production') {
-      console.log(
-        `[Auth] Verification link for ${email}: ${verificationUrl}`,
+      this.logger.warn(
+        `Verification email not sent to ${user.email}. Link: ${verificationUrl}`,
       );
     }
+
+    return sent;
   }
 
   private buildVerificationUrl(token: string): string {

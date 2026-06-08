@@ -12,12 +12,13 @@ export type Appointment = {
   clientPhone: string | null;
   appointmentDate: string;
   status: AppointmentStatus;
-  userId: string;
+  businessId: string;
   createdAt: string;
   updatedAt: string;
 };
 
 export type CreateAppointmentData = {
+  businessId: string;
   title: string;
   description?: string;
   clientName: string;
@@ -36,6 +37,7 @@ export type UpdateAppointmentData = {
 };
 
 export type GetAppointmentsParams = {
+  businessId: string;
   status?: AppointmentStatus;
   fromDate?: string;
   toDate?: string;

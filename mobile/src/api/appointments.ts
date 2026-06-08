@@ -14,6 +14,8 @@ function buildQueryString(params?: GetAppointmentsParams): string {
 
   const searchParams = new URLSearchParams();
 
+  searchParams.set('businessId', params.businessId);
+
   if (params.status) {
     searchParams.set('status', params.status);
   }

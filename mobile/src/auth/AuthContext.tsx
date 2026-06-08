@@ -18,6 +18,7 @@ import {
   logoutRequest,
   refreshRequest,
   registerRequest,
+  verifyEmailRequest,
 } from './auth.api';
 import { LoginCredentials, RegisterCredentials, RegisterResponse } from './auth.types';
 import {
@@ -34,6 +35,7 @@ type AuthContextValue = {
   isSubmitting: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (credentials: RegisterCredentials) => Promise<RegisterResponse>;
+  verifyEmail: (token: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -164,6 +166,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
     [],
   );
 
+  const verifyEmail = useCallback(
+    async (token: string) => {
+      setIsSubmitting(true);
+
+      try {
+        const response = await verifyEmailRequest(token);
+        await applyAuthSession(
+          response.access_token,
+          response.refresh_token,
+          response.user,
+        );
+      } catch (error) {
+        throw new Error(getErrorMessage(error, 'No se pudo verificar el correo'));
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [applyAuthSession],
+  );
+
   const logout = useCallback(async () => {
     setIsSubmitting(true);
 
@@ -187,9 +209,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isSubmitting,
       login,
       register,
+      verifyEmail,
       logout,
     }),
-    [user, isLoading, isSubmitting, login, register, logout],
+    [user, isLoading, isSubmitting, login, register, verifyEmail, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

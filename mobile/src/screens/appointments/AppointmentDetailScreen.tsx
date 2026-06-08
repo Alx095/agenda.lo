@@ -1,46 +1,43 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   deleteAppointment,
   getAppointmentById,
 } from '../../api/appointments';
-import { Appointment, AppointmentStatus } from '../../types/appointment';
+import { AppButton } from '../../components/ui/AppButton';
+import { StatusBadge } from '../../components/ui/StatusBadge';
+import { Appointment } from '../../types/appointment';
 import { AppStackParamList } from '../../types/navigation.types';
+import { useTheme } from '../../theme/ThemeContext';
+import { confirmAction } from '../../utils/confirmAction';
 import { formatAppointmentDate } from '../../utils/formatDate';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'AppointmentDetail'>;
 
-const STATUS_LABELS: Record<AppointmentStatus, string> = {
-  PENDING: 'Pendiente',
-  CONFIRMED: 'Confirmada',
-  CANCELLED: 'Cancelada',
-  COMPLETED: 'Completada',
-};
-
-const STATUS_COLORS: Record<AppointmentStatus, string> = {
-  PENDING: '#F59E0B',
-  CONFIRMED: '#2563EB',
-  CANCELLED: '#DC2626',
-  COMPLETED: '#16A34A',
-};
-
 function DetailRow({
   label,
   value,
+  styles,
 }: {
   label: string;
   value: string | null | undefined;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <View style={styles.row}>
@@ -51,12 +48,19 @@ function DetailRow({
 }
 
 export function AppointmentDetailScreen({ navigation, route }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { appointmentId } = route.params;
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const opacity = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
 
   const loadAppointment = useCallback(async () => {
     setIsLoading(true);
@@ -75,11 +79,12 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      opacity.value = 1;
       void loadAppointment();
-    }, [loadAppointment]),
+    }, [loadAppointment, opacity]),
   );
 
-  const handleDelete = useCallback(async () => {
+  const performDelete = useCallback(async () => {
     setIsDeleting(true);
     setError(null);
 
@@ -87,32 +92,42 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
       await deleteAppointment(appointmentId);
       navigation.navigate('AppointmentList');
     } catch (deleteError) {
+      opacity.value = withTiming(1, { duration: 200 });
       setError(getErrorMessage(deleteError, 'No se pudo eliminar la cita'));
     } finally {
       setIsDeleting(false);
     }
-  }, [appointmentId, navigation]);
+  }, [appointmentId, navigation, opacity]);
+
+  const animateAndDelete = useCallback(() => {
+    opacity.value = withTiming(0, { duration: 260 }, (finished) => {
+      if (finished) {
+        runOnJS(performDelete)();
+      }
+    });
+  }, [opacity, performDelete]);
 
   const confirmDelete = () => {
-    Alert.alert(
-      'Eliminar cita',
-      '¿Estás seguro de que quieres eliminar esta cita? Esta acción no se puede deshacer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => void handleDelete(),
-        },
-      ],
-    );
+    void (async () => {
+      const confirmed = await confirmAction({
+        title: 'Eliminar cita',
+        message:
+          '¿Estás seguro de que quieres eliminar esta cita? Esta acción no se puede deshacer.',
+        confirmLabel: 'Eliminar',
+        cancelLabel: 'Cancelar',
+      });
+
+      if (confirmed) {
+        animateAndDelete();
+      }
+    })();
   };
 
   if (isLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.loadingText}>Cargando cita...</Text>
+        <ActivityIndicator size="small" color={colors.text} />
+        <Text style={styles.loadingText}>Cargando…</Text>
       </View>
     );
   }
@@ -121,8 +136,8 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{error}</Text>
-        <Pressable style={styles.retryButton} onPress={() => void loadAppointment()}>
-          <Text style={styles.retryButtonText}>Reintentar</Text>
+        <Pressable onPress={() => void loadAppointment()}>
+          <Text style={styles.errorLink}>Reintentar</Text>
         </Pressable>
       </View>
     );
@@ -132,162 +147,140 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
     return null;
   }
 
-  const isBusy = isDeleting;
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{appointment.title}</Text>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: STATUS_COLORS[appointment.status] },
-          ]}
-        >
-          <Text style={styles.statusText}>
-            {STATUS_LABELS[appointment.status]}
-          </Text>
+      <Animated.View style={animatedStyle}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{appointment.title}</Text>
+          <StatusBadge status={appointment.status} />
         </View>
-      </View>
 
-      <View style={styles.card}>
-        <DetailRow label="Descripción" value={appointment.description} />
-        <DetailRow label="Cliente" value={appointment.clientName} />
-        <DetailRow label="Teléfono" value={appointment.clientPhone} />
+        <Text style={styles.date}>
+          {formatAppointmentDate(appointment.appointmentDate)}
+        </Text>
+
+        <View style={styles.divider} />
+
         <DetailRow
-          label="Fecha"
-          value={formatAppointmentDate(appointment.appointmentDate)}
+          label="Cliente"
+          value={appointment.clientName}
+          styles={styles}
         />
-      </View>
+        <DetailRow
+          label="Teléfono"
+          value={appointment.clientPhone}
+          styles={styles}
+        />
+        <DetailRow
+          label="Descripción"
+          value={appointment.description}
+          styles={styles}
+        />
+      </Animated.View>
 
       {error ? <Text style={styles.inlineError}>{error}</Text> : null}
 
-      <Pressable
-        style={[styles.button, isBusy && styles.buttonDisabled]}
-        onPress={() =>
-          navigation.navigate('AppointmentForm', { appointmentId })
-        }
-        disabled={isBusy}
-      >
-        <Text style={styles.buttonText}>Editar</Text>
-      </Pressable>
-
-      <Pressable
-        style={[styles.button, styles.deleteButton, isBusy && styles.buttonDisabled]}
-        onPress={confirmDelete}
-        disabled={isBusy}
-      >
-        {isDeleting ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.buttonText}>Eliminar</Text>
-        )}
-      </Pressable>
+      <View style={styles.actions}>
+        <AppButton
+          label="Editar"
+          variant="secondary"
+          onPress={() =>
+            navigation.navigate('AppointmentForm', { appointmentId })
+          }
+          disabled={isDeleting}
+        />
+        <AppButton
+          label="Eliminar"
+          variant="ghost"
+          onPress={confirmDelete}
+          loading={isDeleting}
+        />
+      </View>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
-    padding: 24,
-    gap: 12,
-  },
-  loadingText: {
-    color: '#64748B',
-    fontSize: 15,
-  },
-  header: {
-    marginBottom: 16,
-    gap: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  statusBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  statusText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    gap: 16,
-    marginBottom: 24,
-  },
-  row: {
-    gap: 4,
-  },
-  rowLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-    textTransform: 'uppercase',
-  },
-  rowValue: {
-    fontSize: 16,
-    color: '#0F172A',
-  },
-  button: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  deleteButton: {
-    backgroundColor: '#DC2626',
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 15,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  inlineError: {
-    color: '#DC2626',
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  retryButton: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    content: {
+      padding: 20,
+      paddingBottom: 40,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.bg,
+      padding: 24,
+      gap: 12,
+    },
+    loadingText: {
+      color: colors.textMuted,
+      fontSize: 14,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 16,
+      marginBottom: 8,
+    },
+    title: {
+      flex: 1,
+      fontSize: 26,
+      fontWeight: '600',
+      color: colors.text,
+      letterSpacing: -0.4,
+      lineHeight: 32,
+    },
+    date: {
+      fontSize: 15,
+      color: colors.textMuted,
+      marginBottom: 24,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginBottom: 8,
+    },
+    row: {
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderLight,
+      gap: 4,
+    },
+    rowLabel: {
+      fontSize: 13,
+      color: colors.textSoft,
+    },
+    rowValue: {
+      fontSize: 16,
+      color: colors.text,
+      fontWeight: '500',
+    },
+    actions: {
+      marginTop: 32,
+      gap: 8,
+    },
+    inlineError: {
+      color: colors.danger,
+      fontSize: 14,
+      marginTop: 16,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 15,
+      textAlign: 'center',
+    },
+    errorLink: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      textDecorationLine: 'underline',
+    },
+  });
+}

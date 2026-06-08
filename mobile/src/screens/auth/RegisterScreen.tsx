@@ -1,28 +1,30 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { pingApi } from '../../api/http';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
 import { useAuth } from '../../auth/AuthContext';
-import { ScreenPlaceholder } from '../../components/ScreenPlaceholder';
+import { resendVerificationRequest } from '../../auth/auth.api';
+import { AppButton } from '../../components/ui/AppButton';
+import { AppInput } from '../../components/ui/AppInput';
+import { AppScreen, AuthHeader } from '../../components/ui/AppScreen';
 import { AuthStackParamList } from '../../types/navigation.types';
+import { useTheme } from '../../theme/ThemeContext';
 import { API_URL } from '../../utils/constants';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
 export function RegisterScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { register, isSubmitting } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState(true);
+  const [isResending, setIsResending] = useState(false);
   const [apiStatus, setApiStatus] = useState('comprobando...');
 
   useEffect(() => {
@@ -34,6 +36,8 @@ export function RegisterScreen({ navigation }: Props) {
   const handleRegister = async () => {
     setError(null);
     setSuccess(null);
+    setRegisteredEmail(null);
+    setEmailSent(true);
 
     if (!name.trim() || !email.trim() || !password) {
       setError('Completa todos los campos obligatorios');
@@ -47,6 +51,8 @@ export function RegisterScreen({ navigation }: Props) {
         password,
       });
       setSuccess(response.message);
+      setRegisteredEmail(response.email);
+      setEmailSent(response.emailSent !== false);
     } catch (registerError) {
       setError(
         registerError instanceof Error
@@ -56,118 +62,164 @@ export function RegisterScreen({ navigation }: Props) {
     }
   };
 
+  const handleResendVerification = async () => {
+    const targetEmail = registeredEmail ?? email.trim().toLowerCase();
+    if (!targetEmail) {
+      return;
+    }
+
+    setError(null);
+    setIsResending(true);
+
+    try {
+      const response = await resendVerificationRequest(targetEmail);
+      setSuccess(response.message);
+    } catch (resendError) {
+      setError(
+        resendError instanceof Error
+          ? resendError.message
+          : 'No se pudo reenviar el correo de verificación',
+      );
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   return (
-    <ScreenPlaceholder
-      title="Register"
-      subtitle="Crea tu cuenta para empezar."
+    <AppScreen
+      hero={
+        <AuthHeader
+          title="Crear cuenta"
+          subtitle="Regístrate para empezar a agendar."
+        />
+      }
+      contentStyle={styles.form}
     >
       <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Nombre"
-          value={name}
-          onChangeText={setName}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+        {!success ? (
+          <>
+            <AppInput
+              label="Nombre"
+              placeholder="Tu nombre"
+              value={name}
+              onChangeText={setName}
+            />
+            <AppInput
+              label="Email"
+              placeholder="tu@email.com"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <AppInput
+              label="Contraseña"
+              placeholder="Mínimo 8 caracteres"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
 
-        <Text style={styles.debug}>
-          API: {API_URL}
-          {'\n'}
-          Estado: {apiStatus}
-        </Text>
+            {__DEV__ ? (
+              <Text style={styles.debug}>
+                API: {API_URL}
+                {'\n'}
+                Estado: {apiStatus}
+              </Text>
+            ) : null}
+          </>
+        ) : (
+          <View style={styles.successBox}>
+            <Text style={styles.successTitle}>Revisa tu correo</Text>
+            <Text style={styles.success}>{success}</Text>
+          </View>
+        )}
 
-        {success ? <Text style={styles.success}>{success}</Text> : null}
+        {success && !emailSent ? (
+          <Text style={styles.warning}>
+            El servidor no pudo enviar el correo. Revisa spam o usa el botón de
+            reenvío.
+          </Text>
+        ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {!success ? (
-          <Pressable
-            style={[styles.button, isSubmitting && styles.buttonDisabled]}
+          <AppButton
+            label="Registrarse"
             onPress={() => void handleRegister()}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Registrarse</Text>
-            )}
-          </Pressable>
+            loading={isSubmitting}
+          />
         ) : (
-          <Pressable
-            style={styles.button}
-            onPress={() => navigation.navigate('Login')}
-          >
-            <Text style={styles.buttonText}>Ir a iniciar sesión</Text>
-          </Pressable>
+          <>
+            {!emailSent ? (
+              <AppButton
+                label="Reenviar correo de verificación"
+                onPress={() => void handleResendVerification()}
+                loading={isResending}
+              />
+            ) : null}
+            <AppButton
+              label="Verificar con código"
+              variant="secondary"
+              onPress={() => navigation.navigate('VerifyEmail')}
+            />
+            <AppButton
+              label="Ir a iniciar sesión"
+              variant="ghost"
+              onPress={() => navigation.navigate('Login')}
+            />
+          </>
         )}
 
-        <Pressable onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.link}>Ya tengo cuenta</Text>
-        </Pressable>
+        {!success ? (
+          <Pressable onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.link}>Ya tengo cuenta</Text>
+          </Pressable>
+        ) : null}
       </View>
-    </ScreenPlaceholder>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>['colors']) =>
+  StyleSheet.create({
   form: {
-    gap: 12,
+    paddingHorizontal: 28,
+    gap: 16,
   },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  link: {
-    color: '#2563EB',
-    fontSize: 15,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  success: {
-    color: '#16A34A',
-    fontSize: 14,
+  successBox: {
+    gap: 8,
     marginBottom: 8,
   },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  success: {
+    color: colors.success,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  warning: {
+    color: '#B45309',
+    fontSize: 13,
+    lineHeight: 20,
+  },
   error: {
-    color: '#DC2626',
+    color: colors.danger,
     fontSize: 14,
   },
-  debug: {
-    color: '#64748B',
-    fontSize: 12,
-    marginBottom: 4,
+  link: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 4,
   },
-});
+  debug: {
+    color: colors.textSoft,
+    fontSize: 12,
+  },
+  });

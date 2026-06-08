@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,34 +11,35 @@ import {
   View,
 } from 'react-native';
 import { getAppointments } from '../../api/appointments';
-import { Appointment, AppointmentStatus } from '../../types/appointment';
+import { useBusiness } from '../../business/BusinessContext';
+import { AnimatedListItem } from '../../components/ui/AnimatedListItem';
+import { AppointmentCard } from '../../components/ui/AppointmentCard';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Appointment } from '../../types/appointment';
 import { AppStackParamList } from '../../types/navigation.types';
-import { formatAppointmentDate } from '../../utils/formatDate';
+import { useTheme } from '../../theme/ThemeContext';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'AppointmentList'>;
 
-const STATUS_LABELS: Record<AppointmentStatus, string> = {
-  PENDING: 'Pendiente',
-  CONFIRMED: 'Confirmada',
-  CANCELLED: 'Cancelada',
-  COMPLETED: 'Completada',
-};
-
-const STATUS_COLORS: Record<AppointmentStatus, string> = {
-  PENDING: '#F59E0B',
-  CONFIRMED: '#2563EB',
-  CANCELLED: '#DC2626',
-  COMPLETED: '#16A34A',
-};
-
 export function AppointmentListScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { selectedBusiness, selectedBusinessId, isLoading: isBusinessLoading } =
+    useBusiness();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadAppointments = useCallback(async (refreshing = false) => {
+    if (!selectedBusinessId) {
+      setAppointments([]);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     if (refreshing) {
       setIsRefreshing(true);
     } else {
@@ -47,7 +49,10 @@ export function AppointmentListScreen({ navigation }: Props) {
     setError(null);
 
     try {
-      const response = await getAppointments({ sort: 'asc' });
+      const response = await getAppointments({
+        businessId: selectedBusinessId,
+        sort: 'asc',
+      });
       setAppointments(response.data);
     } catch (loadError) {
       setError(
@@ -57,55 +62,39 @@ export function AppointmentListScreen({ navigation }: Props) {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedBusinessId]);
 
-  useEffect(() => {
-    void loadAppointments();
-  }, [loadAppointments]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadAppointments();
+    }, [loadAppointments]),
+  );
 
   const handleRefresh = useCallback(() => {
     void loadAppointments(true);
   }, [loadAppointments]);
 
   const renderItem = useCallback(
-    ({ item }: { item: Appointment }) => (
-      <Pressable
-        style={styles.card}
-        onPress={() =>
-          navigation.navigate('AppointmentDetail', {
-            appointmentId: item.id,
-          })
-        }
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.title}
-          </Text>
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: STATUS_COLORS[item.status] },
-            ]}
-          >
-            <Text style={styles.statusText}>
-              {STATUS_LABELS[item.status]}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.cardClient}>{item.clientName}</Text>
-        <Text style={styles.cardDate}>
-          {formatAppointmentDate(item.appointmentDate)}
-        </Text>
-      </Pressable>
+    ({ item, index }: { item: Appointment; index: number }) => (
+      <AnimatedListItem index={index}>
+        <AppointmentCard
+          appointment={item}
+          onPress={() =>
+            navigation.navigate('AppointmentDetail', {
+              appointmentId: item.id,
+            })
+          }
+        />
+      </AnimatedListItem>
     ),
     [navigation],
   );
 
-  if (isLoading && appointments.length === 0) {
+  if ((isLoading || isBusinessLoading) && appointments.length === 0) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.loadingText}>Cargando citas...</Text>
+        <ActivityIndicator size="small" color={colors.text} />
+        <Text style={styles.loadingText}>Cargando…</Text>
       </View>
     );
   }
@@ -113,22 +102,27 @@ export function AppointmentListScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable
-          style={styles.newButton}
-          onPress={() => navigation.navigate('AppointmentForm')}
-        >
-          <Text style={styles.newButtonText}>Nueva cita</Text>
-        </Pressable>
+        <View>
+          {selectedBusiness ? (
+            <Text style={styles.businessName}>{selectedBusiness.name}</Text>
+          ) : null}
+          <Text style={styles.count}>
+            {appointments.length}{' '}
+            {appointments.length === 1 ? 'cita' : 'citas'}
+          </Text>
+        </View>
+        {selectedBusinessId ? (
+          <Pressable onPress={() => navigation.navigate('AppointmentForm')}>
+            <Text style={styles.addLink}>Nueva cita</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {error ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable
-            style={styles.retryButton}
-            onPress={() => void loadAppointments()}
-          >
-            <Text style={styles.retryButtonText}>Reintentar</Text>
+          <Pressable onPress={() => void loadAppointments()}>
+            <Text style={styles.errorLink}>Reintentar</Text>
           </Pressable>
         </View>
       ) : null}
@@ -137,6 +131,7 @@ export function AppointmentListScreen({ navigation }: Props) {
         data={appointments}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={
           appointments.length === 0 ? styles.emptyList : styles.list
         }
@@ -144,18 +139,17 @@ export function AppointmentListScreen({ navigation }: Props) {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            colors={['#2563EB']}
-            tintColor="#2563EB"
+            tintColor={colors.textMuted}
           />
         }
         ListEmptyComponent={
           !error ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>No tienes citas</Text>
-              <Text style={styles.emptySubtitle}>
-                Pulsa "Nueva cita" para crear la primera.
-              </Text>
-            </View>
+            <EmptyState
+              title="Sin citas"
+              subtitle="Cuando agendes una, aparecerá aquí en orden cronológico."
+              actionLabel="Agendar cita"
+              onAction={() => navigation.navigate('AppointmentForm')}
+            />
           ) : null
         }
       />
@@ -163,128 +157,77 @@ export function AppointmentListScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
-    gap: 12,
-  },
-  loadingText: {
-    color: '#64748B',
-    fontSize: 15,
-  },
-  header: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-  newButton: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-  },
-  newButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  errorBox: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    padding: 14,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  retryButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#DC2626',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  list: {
-    padding: 16,
-    paddingTop: 8,
-    gap: 12,
-  },
-  emptyList: {
-    flexGrow: 1,
-    padding: 16,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 8,
-  },
-  cardTitle: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cardClient: {
-    fontSize: 15,
-    color: '#334155',
-    marginBottom: 4,
-  },
-  cardDate: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 48,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0F172A',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 15,
-    color: '#64748B',
-    textAlign: 'center',
-  },
-});
+function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.bg,
+      gap: 12,
+    },
+    loadingText: {
+      color: colors.textMuted,
+      fontSize: 14,
+    },
+    header: {
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 16,
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    businessName: {
+      fontSize: 13,
+      color: colors.textSoft,
+      marginBottom: 2,
+    },
+    count: {
+      fontSize: 22,
+      fontWeight: '600',
+      color: colors.text,
+      letterSpacing: -0.3,
+    },
+    addLink: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+      textDecorationLine: 'underline',
+    },
+    errorBox: {
+      marginHorizontal: 20,
+      marginTop: 12,
+      paddingLeft: 12,
+      borderLeftWidth: 3,
+      borderLeftColor: colors.danger,
+      gap: 6,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 14,
+    },
+    errorLink: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    list: {
+      padding: 20,
+      paddingBottom: 32,
+    },
+    separator: {
+      height: 10,
+    },
+    emptyList: {
+      flexGrow: 1,
+      paddingHorizontal: 20,
+    },
+  });
+}

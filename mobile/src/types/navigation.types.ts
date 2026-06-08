@@ -1,6 +1,7 @@
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
+  VerifyEmail: { token?: string } | undefined;
 };
 
 export type AppStackParamList = {

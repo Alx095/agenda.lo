@@ -1,12 +1,11 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import {
@@ -14,8 +13,14 @@ import {
   getAppointmentById,
   updateAppointment,
 } from '../../api/appointments';
+import { useBusiness } from '../../business/BusinessContext';
+import { AppButton } from '../../components/ui/AppButton';
+import { AppInput } from '../../components/ui/AppInput';
+import { DateTimeField } from '../../components/ui/DateTimeField';
+import { SuccessToast } from '../../components/ui/SuccessToast';
 import { AppointmentStatus } from '../../types/appointment';
 import { AppStackParamList } from '../../types/navigation.types';
+import { useTheme } from '../../theme/ThemeContext';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'AppointmentForm'>;
@@ -32,7 +37,7 @@ type FormState = {
   description: string;
   clientName: string;
   clientPhone: string;
-  appointmentDate: string;
+  appointmentDate: Date | null;
   status: AppointmentStatus;
 };
 
@@ -41,22 +46,25 @@ const INITIAL_FORM: FormState = {
   description: '',
   clientName: '',
   clientPhone: '',
-  appointmentDate: '',
+  appointmentDate: null,
   status: 'PENDING',
 };
 
-function isValidIsoDate(value: string): boolean {
-  const date = new Date(value);
-  return !Number.isNaN(date.getTime());
-}
-
 export function AppointmentFormScreen({ navigation, route }: Props) {
+  const { colors, statusTheme } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const appointmentId = route.params?.appointmentId;
   const isEditMode = Boolean(appointmentId);
+  const {
+    selectedBusiness,
+    selectedBusinessId,
+    isLoading: isBusinessLoading,
+  } = useBusiness();
 
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [isLoading, setIsLoading] = useState(isEditMode);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -80,7 +88,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
         description: appointment.description ?? '',
         clientName: appointment.clientName,
         clientPhone: appointment.clientPhone ?? '',
-        appointmentDate: appointment.appointmentDate,
+        appointmentDate: new Date(appointment.appointmentDate),
         status: appointment.status,
       });
     } catch (loadError) {
@@ -112,16 +120,12 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
       return 'El nombre del cliente es obligatorio';
     }
 
-    if (!form.appointmentDate.trim()) {
-      return 'La fecha es obligatoria';
+    if (!form.appointmentDate) {
+      return 'Selecciona una fecha y hora';
     }
 
-    if (!isValidIsoDate(form.appointmentDate.trim())) {
-      return 'La fecha debe ser un texto ISO válido (ej. 2026-06-10T10:00:00.000Z)';
-    }
-
-    if (!form.status) {
-      return 'El estado es obligatorio';
+    if (Number.isNaN(form.appointmentDate.getTime())) {
+      return 'La fecha seleccionada no es válida';
     }
 
     return null;
@@ -129,6 +133,11 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
 
   const handleSubmit = async () => {
     setError(null);
+
+    if (!isEditMode && !selectedBusinessId) {
+      setError('No hay un negocio seleccionado. Vuelve al inicio e inténtalo de nuevo.');
+      return;
+    }
 
     const validationError = validateForm();
     if (validationError) {
@@ -143,7 +152,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
       description: form.description.trim() || undefined,
       clientName: form.clientName.trim(),
       clientPhone: form.clientPhone.trim() || undefined,
-      appointmentDate: form.appointmentDate.trim(),
+      appointmentDate: form.appointmentDate!.toISOString(),
       status: form.status,
     };
 
@@ -152,8 +161,14 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
         await updateAppointment(appointmentId, payload);
         navigation.navigate('AppointmentDetail', { appointmentId });
       } else {
-        await createAppointment(payload);
-        navigation.navigate('AppointmentList');
+        await createAppointment({
+          ...payload,
+          businessId: selectedBusinessId!,
+        });
+        setShowSuccess(true);
+        setTimeout(() => {
+          navigation.navigate('AppointmentList');
+        }, 1200);
       }
     } catch (submitError) {
       setError(
@@ -169,201 +184,195 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || (!isEditMode && isBusinessLoading)) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.loadingText}>Cargando cita...</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>
+          {isEditMode ? 'Cargando cita...' : 'Preparando negocio...'}
+        </Text>
+      </View>
+    );
+  }
+
+  if (!isEditMode && !selectedBusinessId) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.error}>
+          No se pudo cargar tu negocio. Vuelve al inicio e inténtalo de nuevo.
+        </Text>
       </View>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={styles.label}>Título *</Text>
-      <TextInput
-        style={styles.input}
-        value={form.title}
-        onChangeText={(value) => updateField('title', value)}
-        placeholder="Consulta general"
+    <View style={styles.wrapper}>
+      <SuccessToast
+        visible={showSuccess}
+        message="Cita guardada"
+        onHide={() => setShowSuccess(false)}
       />
 
-      <Text style={styles.label}>Descripción</Text>
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        value={form.description}
-        onChangeText={(value) => updateField('description', value)}
-        placeholder="Notas opcionales"
-        multiline
-        numberOfLines={3}
-      />
-
-      <Text style={styles.label}>Cliente *</Text>
-      <TextInput
-        style={styles.input}
-        value={form.clientName}
-        onChangeText={(value) => updateField('clientName', value)}
-        placeholder="Nombre del cliente"
-      />
-
-      <Text style={styles.label}>Teléfono</Text>
-      <TextInput
-        style={styles.input}
-        value={form.clientPhone}
-        onChangeText={(value) => updateField('clientPhone', value)}
-        placeholder="+34 600 000 000"
-        keyboardType="phone-pad"
-      />
-
-      <Text style={styles.label}>Fecha (ISO) *</Text>
-      <TextInput
-        style={styles.input}
-        value={form.appointmentDate}
-        onChangeText={(value) => updateField('appointmentDate', value)}
-        placeholder="2026-06-10T10:00:00.000Z"
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <Text style={styles.hint}>
-        Formato ISO 8601, por ejemplo: 2026-06-10T10:00:00.000Z
-      </Text>
-
-      <Text style={styles.label}>Estado *</Text>
-      <View style={styles.statusRow}>
-        {STATUS_OPTIONS.map((option) => {
-          const selected = form.status === option.value;
-
-          return (
-            <Pressable
-              key={option.value}
-              style={[styles.statusChip, selected && styles.statusChipSelected]}
-              onPress={() => updateField('status', option.value)}
-            >
-              <Text
-                style={[
-                  styles.statusChipText,
-                  selected && styles.statusChipTextSelected,
-                ]}
-              >
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      <Pressable
-        style={[styles.button, isSubmitting && styles.buttonDisabled]}
-        onPress={() => void handleSubmit()}
-        disabled={isSubmitting}
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
       >
-        {isSubmitting ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.buttonText}>
-            {isEditMode ? 'Guardar cambios' : 'Crear cita'}
-          </Text>
-        )}
-      </Pressable>
-    </ScrollView>
+        {!isEditMode && selectedBusiness ? (
+          <Text style={styles.businessNote}>{selectedBusiness.name}</Text>
+        ) : null}
+
+        <View style={styles.formCard}>
+          <AppInput
+            label="Título"
+            placeholder="Consulta general"
+            value={form.title}
+            onChangeText={(value) => updateField('title', value)}
+          />
+          <AppInput
+            label="Descripción"
+            placeholder="Notas opcionales"
+            value={form.description}
+            onChangeText={(value) => updateField('description', value)}
+            multiline
+            numberOfLines={3}
+            style={styles.textArea}
+          />
+          <AppInput
+            label="Cliente"
+            placeholder="Nombre del cliente"
+            value={form.clientName}
+            onChangeText={(value) => updateField('clientName', value)}
+          />
+          <AppInput
+            label="Teléfono"
+            placeholder="+34 600 000 000"
+            keyboardType="phone-pad"
+            value={form.clientPhone}
+            onChangeText={(value) => updateField('clientPhone', value)}
+          />
+          <DateTimeField
+            label="Fecha y hora"
+            value={form.appointmentDate}
+            onChange={(date) => updateField('appointmentDate', date)}
+            minimumDate={isEditMode ? undefined : new Date()}
+          />
+
+          <View style={styles.statusSection}>
+            <Text style={styles.statusLabel}>Estado</Text>
+            <View style={styles.statusRow}>
+              {STATUS_OPTIONS.map((option) => {
+                const selected = form.status === option.value;
+                const theme = statusTheme[option.value];
+
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[
+                      styles.statusChip,
+                      selected && {
+                        backgroundColor: theme.bg,
+                        borderColor: theme.accent,
+                      },
+                    ]}
+                    onPress={() => updateField('status', option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.statusChipText,
+                        selected && { color: theme.text },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <AppButton
+          label={isEditMode ? 'Guardar cambios' : 'Crear cita'}
+          onPress={() => void handleSubmit()}
+          loading={isSubmitting}
+        />
+      </ScrollView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
-    gap: 12,
-  },
-  loadingText: {
-    color: '#64748B',
-    fontSize: 15,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#0F172A',
-  },
-  textArea: {
-    minHeight: 88,
-    textAlignVertical: 'top',
-  },
-  hint: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 6,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  statusChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-  },
-  statusChipSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  statusChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  statusChipTextSelected: {
-    color: '#FFFFFF',
-  },
-  error: {
-    color: '#DC2626',
-    fontSize: 14,
-    marginTop: 16,
-  },
-  button: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    wrapper: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    container: {
+      flex: 1,
+    },
+    content: {
+      padding: 20,
+      paddingBottom: 32,
+      gap: 14,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.bg,
+      gap: 12,
+      padding: 24,
+    },
+    loadingText: {
+      color: colors.textMuted,
+      fontSize: 15,
+    },
+    businessNote: {
+      fontSize: 14,
+      color: colors.textSoft,
+      marginBottom: 4,
+    },
+    formCard: {
+      gap: 16,
+    },
+    textArea: {
+      minHeight: 96,
+      textAlignVertical: 'top',
+    },
+    statusSection: {
+      gap: 8,
+    },
+    statusLabel: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    statusChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: 999,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
+    },
+    statusChipText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textMuted,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 14,
+    },
+  });
+}
