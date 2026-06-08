@@ -20,4 +20,8 @@ export const envValidationSchema = Joi.object({
     then: Joi.string().min(1).required(),
     otherwise: Joi.string().allow('').optional(),
   }),
+
+  RESEND_API_KEY: Joi.string().allow('').optional(),
+
+  EMAIL_FROM: Joi.string().allow('').optional(),
 });
