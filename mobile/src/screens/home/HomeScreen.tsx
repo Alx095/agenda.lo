@@ -12,7 +12,7 @@ export function HomeScreen({ navigation }: Props) {
   return (
     <ScreenPlaceholder
       title={`Hola, ${user?.name ?? 'Usuario'}`}
-      subtitle="Pantalla principal de la app autenticada."
+      subtitle="Gestiona tus citas desde aquí."
     >
       <Text style={styles.email}>{user?.email}</Text>
 
@@ -21,6 +21,13 @@ export function HomeScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('AppointmentList')}
       >
         <Text style={styles.buttonText}>Ver citas</Text>
+      </Pressable>
+
+      <Pressable
+        style={[styles.button, styles.secondaryButton]}
+        onPress={() => navigation.navigate('AppointmentForm')}
+      >
+        <Text style={styles.buttonText}>Nueva cita</Text>
       </Pressable>
 
       <Pressable
@@ -54,8 +61,12 @@ const styles = StyleSheet.create({
     minWidth: 160,
     alignItems: 'center',
   },
+  secondaryButton: {
+    backgroundColor: '#0F172A',
+  },
   logoutButton: {
     backgroundColor: '#DC2626',
+    marginTop: 8,
   },
   buttonText: {
     color: '#FFFFFF',

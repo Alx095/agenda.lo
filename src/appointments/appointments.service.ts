@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Appointment, AppointmentStatus, Prisma } from '../generated/prisma/client';
+import { BusinessAccessService } from '../businesses/business-access.service';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppointmentQueryDto } from './dto/appointment-query.dto';
@@ -19,21 +20,27 @@ export class AppointmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
+    private readonly businessAccessService: BusinessAccessService,
   ) {}
 
   async create(
     userId: string,
     createAppointmentDto: CreateAppointmentDto,
   ): Promise<Appointment> {
+    await this.businessAccessService.assertMembership(
+      userId,
+      createAppointmentDto.businessId,
+    );
+
     const appointment = await this.prisma.appointment.create({
       data: {
+        businessId: createAppointmentDto.businessId,
         title: createAppointmentDto.title,
         description: createAppointmentDto.description,
         clientName: createAppointmentDto.clientName,
         clientPhone: createAppointmentDto.clientPhone,
         appointmentDate: new Date(createAppointmentDto.appointmentDate),
         status: createAppointmentDto.status ?? AppointmentStatus.PENDING,
-        userId,
       },
     });
 
@@ -80,6 +87,8 @@ export class AppointmentsService {
     userId: string,
     query: AppointmentQueryDto,
   ): Promise<PaginatedAppointmentsResponse> {
+    await this.businessAccessService.assertMembership(userId, query.businessId);
+
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const sort = query.sort ?? 'asc';
@@ -94,7 +103,7 @@ export class AppointmentsService {
     }
 
     const where: Prisma.AppointmentWhereInput = {
-      userId,
+      businessId: query.businessId,
       ...(query.status !== undefined && { status: query.status }),
       ...this.buildDateRangeFilter(query.fromDate, query.toDate),
     };
@@ -141,13 +150,18 @@ export class AppointmentsService {
   }
 
   async findOne(userId: string, id: string): Promise<Appointment> {
-    const appointment = await this.prisma.appointment.findFirst({
-      where: { id, userId },
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id },
     });
 
     if (!appointment) {
       throw new NotFoundException('Appointment not found');
     }
+
+    await this.businessAccessService.assertMembership(
+      userId,
+      appointment.businessId,
+    );
 
     return appointment;
   }
@@ -195,12 +209,10 @@ export class AppointmentsService {
   }
 
   async remove(userId: string, id: string): Promise<void> {
-    const result = await this.prisma.appointment.deleteMany({
-      where: { id, userId },
-    });
+    const appointment = await this.findOne(userId, id);
 
-    if (result.count === 0) {
-      throw new NotFoundException('Appointment not found');
-    }
+    await this.prisma.appointment.delete({
+      where: { id: appointment.id },
+    });
   }
 }

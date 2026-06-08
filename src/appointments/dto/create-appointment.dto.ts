@@ -4,10 +4,15 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
 } from 'class-validator';
 import { AppointmentStatus } from '../../generated/prisma/client';
 
 export class CreateAppointmentDto {
+  @IsUUID()
+  @IsNotEmpty()
+  businessId: string;
+
   @IsString()
   @IsNotEmpty()
   title: string;

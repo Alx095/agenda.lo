@@ -68,6 +68,26 @@ export class UsersService {
     }
   }
 
+  async updatePushToken(userId: string, pushToken: string): Promise<SafeUser> {
+    try {
+      const user = await this.prisma.user.update({
+        where: { id: userId },
+        data: { pushToken },
+      });
+
+      return this.toSafeUser(user);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('User not found');
+      }
+
+      throw error;
+    }
+  }
+
   private toSafeUser(user: User): SafeUser {
     return {
       id: user.id,

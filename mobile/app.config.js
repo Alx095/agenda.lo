@@ -9,6 +9,9 @@ module.exports = {
     ...appJson.expo,
     extra: {
       apiUrl,
+      eas: {
+        projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
+      },
     },
   },
 };

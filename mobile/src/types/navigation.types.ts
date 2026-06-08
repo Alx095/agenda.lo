@@ -6,6 +6,6 @@ export type AuthStackParamList = {
 export type AppStackParamList = {
   Home: undefined;
   AppointmentList: undefined;
-  AppointmentForm: undefined;
+  AppointmentForm: { appointmentId?: string } | undefined;
   AppointmentDetail: { appointmentId: string };
 };

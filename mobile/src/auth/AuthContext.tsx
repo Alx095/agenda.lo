@@ -25,6 +25,7 @@ import {
   getStoredTokens,
   saveTokens,
 } from './tokenStorage';
+import { registerPushNotifications } from '../notifications/registerPushNotifications';
 
 type AuthContextValue = {
   user: User | null;
@@ -44,14 +45,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const refreshTokenRef = useRef<string | null>(null);
 
+  const syncPushNotifications = useCallback(async () => {
+    await registerPushNotifications();
+  }, []);
+
   const applyAuthSession = useCallback(
     async (accessToken: string, refreshToken: string, nextUser: User) => {
       refreshTokenRef.current = refreshToken;
       setAccessToken(accessToken);
       await saveTokens(accessToken, refreshToken);
       setUser(nextUser);
+      void syncPushNotifications();
     },
-    [],
+    [syncPushNotifications],
   );
 
   const clearAuthSession = useCallback(async () => {
@@ -98,6 +104,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         const me = await getMeRequest();
         setUser(me);
+        void syncPushNotifications();
       } catch {
         const newAccessToken = await refreshSession();
         if (!newAccessToken) {
@@ -109,7 +116,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     } finally {
       setIsLoading(false);
     }
-  }, [clearAuthSession, refreshSession]);
+  }, [clearAuthSession, refreshSession, syncPushNotifications]);
 
   useEffect(() => {
     configureApiAuth({

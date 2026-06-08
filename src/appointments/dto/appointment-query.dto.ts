@@ -4,13 +4,19 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
+  IsUUID,
   Max,
   Min,
 } from 'class-validator';
 import { AppointmentStatus } from '../../generated/prisma/client';
 
 export class AppointmentQueryDto {
+  @IsUUID()
+  @IsNotEmpty()
+  businessId: string;
+
   @IsOptional()
   @IsEnum(AppointmentStatus)
   status?: AppointmentStatus;
