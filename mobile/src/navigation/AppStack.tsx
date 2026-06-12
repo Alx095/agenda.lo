@@ -1,10 +1,9 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AppointmentDetailScreen } from '../screens/appointments/AppointmentDetailScreen';
 import { AppointmentFormScreen } from '../screens/appointments/AppointmentFormScreen';
-import { AppointmentListScreen } from '../screens/appointments/AppointmentListScreen';
-import { HomeScreen } from '../screens/home/HomeScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { AppStackParamList } from '../types/navigation.types';
+import { MainTabs } from './MainTabs';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
@@ -15,9 +14,6 @@ export function AppStack() {
     <Stack.Navigator
       screenOptions={{
         ...navigationTheme,
-        headerStyle: {
-          ...navigationTheme.headerStyle,
-        },
         headerTitleStyle: {
           ...navigationTheme.headerTitleStyle,
           fontSize: 16,
@@ -26,24 +22,19 @@ export function AppStack() {
       }}
     >
       <Stack.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ title: 'Inicio' }}
-      />
-      <Stack.Screen
-        name="AppointmentList"
-        component={AppointmentListScreen}
-        options={{ title: 'Agenda' }}
+        name="MainTabs"
+        component={MainTabs}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="AppointmentForm"
         component={AppointmentFormScreen}
-        options={{ title: 'Cita' }}
+        options={{ title: 'Reserva' }}
       />
       <Stack.Screen
         name="AppointmentDetail"
         component={AppointmentDetailScreen}
-        options={{ title: 'Detalle' }}
+        options={{ title: 'Detalle de reserva' }}
       />
     </Stack.Navigator>
   );

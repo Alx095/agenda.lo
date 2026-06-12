@@ -4,9 +4,14 @@ export type AuthStackParamList = {
   VerifyEmail: { token?: string } | undefined;
 };
 
+export type MainTabParamList = {
+  Today: undefined;
+  Calendar: undefined;
+  Account: undefined;
+};
+
 export type AppStackParamList = {
-  Home: undefined;
-  AppointmentList: undefined;
+  MainTabs: { screen?: keyof MainTabParamList } | undefined;
   AppointmentForm: { appointmentId?: string } | undefined;
   AppointmentDetail: { appointmentId: string };
 };

@@ -24,6 +24,40 @@ export function formatAppointmentTime(isoDate: string): string {
   }).format(date);
 }
 
+export function formatTodayHeader(date = new Date()): string {
+  return new Intl.DateTimeFormat('es', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(date);
+}
+
+export function formatSectionTitle(dateKey: string): string {
+  const date = new Date(dateKey);
+
+  if (Number.isNaN(date.getTime())) {
+    return dateKey;
+  }
+
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+
+  if (date.toDateString() === today.toDateString()) {
+    return 'Hoy';
+  }
+
+  if (date.toDateString() === tomorrow.toDateString()) {
+    return 'Mañana';
+  }
+
+  return new Intl.DateTimeFormat('es', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(date);
+}
+
 export function formatAppointmentDay(isoDate: string): string {
   const date = new Date(isoDate);
 

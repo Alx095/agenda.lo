@@ -26,4 +26,6 @@ export const envValidationSchema = Joi.object({
   EMAIL_FROM: Joi.string().allow('').optional(),
 
   APP_URL: Joi.string().allow('').optional(),
+
+  UNVERIFIED_USER_TTL_MINUTES: Joi.number().integer().min(1).default(5),
 });

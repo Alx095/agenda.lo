@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   createAppointment,
   getAppointmentById,
@@ -50,9 +51,30 @@ const INITIAL_FORM: FormState = {
   status: 'PENDING',
 };
 
+function FormSection({
+  title,
+  children,
+  styles,
+}: {
+  title: string;
+  children: ReactNode;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionBody}>{children}</View>
+    </View>
+  );
+}
+
 export function AppointmentFormScreen({ navigation, route }: Props) {
   const { colors, statusTheme } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(
+    () => createStyles(colors, insets.bottom),
+    [colors, insets.bottom],
+  );
   const appointmentId = route.params?.appointmentId;
   const isEditMode = Boolean(appointmentId);
   const {
@@ -69,7 +91,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: isEditMode ? 'Editar cita' : 'Nueva cita',
+      title: isEditMode ? 'Editar reserva' : 'Nueva reserva',
     });
   }, [navigation, isEditMode]);
 
@@ -92,7 +114,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
         status: appointment.status,
       });
     } catch (loadError) {
-      setError(getErrorMessage(loadError, 'No se pudo cargar la cita'));
+      setError(getErrorMessage(loadError, 'No se pudo cargar la reserva'));
     } finally {
       setIsLoading(false);
     }
@@ -112,12 +134,12 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
   };
 
   const validateForm = (): string | null => {
-    if (!form.title.trim()) {
-      return 'El título es obligatorio';
-    }
-
     if (!form.clientName.trim()) {
       return 'El nombre del cliente es obligatorio';
+    }
+
+    if (!form.title.trim()) {
+      return 'El servicio es obligatorio';
     }
 
     if (!form.appointmentDate) {
@@ -135,7 +157,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
     setError(null);
 
     if (!isEditMode && !selectedBusinessId) {
-      setError('No hay un negocio seleccionado. Vuelve al inicio e inténtalo de nuevo.');
+      setError('No hay un negocio seleccionado.');
       return;
     }
 
@@ -167,16 +189,16 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
         });
         setShowSuccess(true);
         setTimeout(() => {
-          navigation.navigate('AppointmentList');
-        }, 1200);
+          navigation.navigate('MainTabs', { screen: 'Calendar' });
+        }, 900);
       }
     } catch (submitError) {
       setError(
         getErrorMessage(
           submitError,
           isEditMode
-            ? 'No se pudo actualizar la cita'
-            : 'No se pudo crear la cita',
+            ? 'No se pudo actualizar la reserva'
+            : 'No se pudo crear la reserva',
         ),
       );
     } finally {
@@ -189,7 +211,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>
-          {isEditMode ? 'Cargando cita...' : 'Preparando negocio...'}
+          {isEditMode ? 'Cargando reserva…' : 'Preparando…'}
         </Text>
       </View>
     );
@@ -199,7 +221,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
     return (
       <View style={styles.centered}>
         <Text style={styles.error}>
-          No se pudo cargar tu negocio. Vuelve al inicio e inténtalo de nuevo.
+          No se pudo cargar tu negocio. Revisa la pestaña Cuenta.
         </Text>
       </View>
     );
@@ -209,7 +231,7 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
     <View style={styles.wrapper}>
       <SuccessToast
         visible={showSuccess}
-        message="Cita guardada"
+        message="Reserva creada"
         onHide={() => setShowSuccess(false)}
       />
 
@@ -222,24 +244,9 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
           <Text style={styles.businessNote}>{selectedBusiness.name}</Text>
         ) : null}
 
-        <View style={styles.formCard}>
+        <FormSection title="Cliente" styles={styles}>
           <AppInput
-            label="Título"
-            placeholder="Consulta general"
-            value={form.title}
-            onChangeText={(value) => updateField('title', value)}
-          />
-          <AppInput
-            label="Descripción"
-            placeholder="Notas opcionales"
-            value={form.description}
-            onChangeText={(value) => updateField('description', value)}
-            multiline
-            numberOfLines={3}
-            style={styles.textArea}
-          />
-          <AppInput
-            label="Cliente"
+            label="Nombre"
             placeholder="Nombre del cliente"
             value={form.clientName}
             onChangeText={(value) => updateField('clientName', value)}
@@ -251,60 +258,85 @@ export function AppointmentFormScreen({ navigation, route }: Props) {
             value={form.clientPhone}
             onChangeText={(value) => updateField('clientPhone', value)}
           />
+        </FormSection>
+
+        <FormSection title="Servicio" styles={styles}>
+          <AppInput
+            label="Nombre del servicio"
+            placeholder="Corte, manicura, consulta…"
+            value={form.title}
+            onChangeText={(value) => updateField('title', value)}
+          />
+          <AppInput
+            label="Notas internas"
+            placeholder="Preferencias, alergias, detalles…"
+            value={form.description}
+            onChangeText={(value) => updateField('description', value)}
+            multiline
+            numberOfLines={3}
+            style={styles.textArea}
+          />
+        </FormSection>
+
+        <FormSection title="Fecha y hora" styles={styles}>
           <DateTimeField
-            label="Fecha y hora"
+            label="Cuándo"
             value={form.appointmentDate}
             onChange={(date) => updateField('appointmentDate', date)}
             minimumDate={isEditMode ? undefined : new Date()}
           />
+        </FormSection>
 
-          <View style={styles.statusSection}>
-            <Text style={styles.statusLabel}>Estado</Text>
-            <View style={styles.statusRow}>
-              {STATUS_OPTIONS.map((option) => {
-                const selected = form.status === option.value;
-                const theme = statusTheme[option.value];
+        <FormSection title="Estado" styles={styles}>
+          <View style={styles.statusRow}>
+            {STATUS_OPTIONS.map((option) => {
+              const selected = form.status === option.value;
+              const theme = statusTheme[option.value];
 
-                return (
-                  <Pressable
-                    key={option.value}
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[
+                    styles.statusChip,
+                    selected && {
+                      backgroundColor: theme.bg,
+                      borderColor: theme.accent,
+                    },
+                  ]}
+                  onPress={() => updateField('status', option.value)}
+                >
+                  <Text
                     style={[
-                      styles.statusChip,
-                      selected && {
-                        backgroundColor: theme.bg,
-                        borderColor: theme.accent,
-                      },
+                      styles.statusChipText,
+                      selected && { color: theme.text },
                     ]}
-                    onPress={() => updateField('status', option.value)}
                   >
-                    <Text
-                      style={[
-                        styles.statusChipText,
-                        selected && { color: theme.text },
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-        </View>
+        </FormSection>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+      </ScrollView>
 
+      <View style={styles.footer}>
         <AppButton
-          label={isEditMode ? 'Guardar cambios' : 'Crear cita'}
+          label={isEditMode ? 'Guardar cambios' : 'Confirmar reserva'}
           onPress={() => void handleSubmit()}
           loading={isSubmitting}
         />
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
-function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
+function createStyles(
+  colors: ReturnType<typeof useTheme>['colors'],
+  bottomInset: number,
+) {
   return StyleSheet.create({
     wrapper: {
       flex: 1,
@@ -315,8 +347,8 @@ function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
     },
     content: {
       padding: 20,
-      paddingBottom: 32,
-      gap: 14,
+      paddingBottom: 24,
+      gap: 20,
     },
     centered: {
       flex: 1,
@@ -333,24 +365,28 @@ function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
     businessNote: {
       fontSize: 14,
       color: colors.textSoft,
-      marginBottom: 4,
     },
-    formCard: {
-      gap: 16,
+    section: {
+      gap: 10,
+    },
+    sectionTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textSoft,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    sectionBody: {
+      gap: 14,
+      padding: 16,
+      borderRadius: 12,
+      backgroundColor: colors.bgCard,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     textArea: {
       minHeight: 96,
       textAlignVertical: 'top',
-    },
-    statusSection: {
-      gap: 8,
-    },
-    statusLabel: {
-      fontSize: 13,
-      fontWeight: '700',
-      color: colors.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
     },
     statusRow: {
       flexDirection: 'row',
@@ -373,6 +409,14 @@ function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
     error: {
       color: colors.danger,
       fontSize: 14,
+    },
+    footer: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: Math.max(bottomInset, 16),
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.bgCard,
     },
   });
 }

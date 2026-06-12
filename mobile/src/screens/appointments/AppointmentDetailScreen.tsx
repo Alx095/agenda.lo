@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -20,17 +21,21 @@ import {
   getAppointmentById,
 } from '../../api/appointments';
 import { AppButton } from '../../components/ui/AppButton';
+import { ClientAvatar } from '../../components/ui/ClientAvatar';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Appointment } from '../../types/appointment';
 import { AppStackParamList } from '../../types/navigation.types';
 import { useTheme } from '../../theme/ThemeContext';
 import { confirmAction } from '../../utils/confirmAction';
-import { formatAppointmentDate } from '../../utils/formatDate';
+import {
+  formatAppointmentDate,
+  formatAppointmentTime,
+} from '../../utils/formatDate';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'AppointmentDetail'>;
 
-function DetailRow({
+function InfoBlock({
   label,
   value,
   styles,
@@ -40,16 +45,20 @@ function DetailRow({
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value?.trim() || '—'}</Text>
+    <View style={styles.infoBlock}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value?.trim() || '—'}</Text>
     </View>
   );
 }
 
 export function AppointmentDetailScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(
+    () => createStyles(colors, insets.bottom),
+    [colors, insets.bottom],
+  );
   const { appointmentId } = route.params;
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
@@ -70,7 +79,7 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
       const data = await getAppointmentById(appointmentId);
       setAppointment(data);
     } catch (loadError) {
-      setError(getErrorMessage(loadError, 'No se pudo cargar la cita'));
+      setError(getErrorMessage(loadError, 'No se pudo cargar la reserva'));
       setAppointment(null);
     } finally {
       setIsLoading(false);
@@ -90,10 +99,10 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
 
     try {
       await deleteAppointment(appointmentId);
-      navigation.navigate('AppointmentList');
+      navigation.goBack();
     } catch (deleteError) {
       opacity.value = withTiming(1, { duration: 200 });
-      setError(getErrorMessage(deleteError, 'No se pudo eliminar la cita'));
+      setError(getErrorMessage(deleteError, 'No se pudo eliminar la reserva'));
     } finally {
       setIsDeleting(false);
     }
@@ -110,11 +119,11 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
   const confirmDelete = () => {
     void (async () => {
       const confirmed = await confirmAction({
-        title: 'Eliminar cita',
+        title: 'Cancelar reserva',
         message:
-          '¿Estás seguro de que quieres eliminar esta cita? Esta acción no se puede deshacer.',
+          '¿Eliminar esta reserva? Esta acción no se puede deshacer.',
         confirmLabel: 'Eliminar',
-        cancelLabel: 'Cancelar',
+        cancelLabel: 'Volver',
       });
 
       if (confirmed) {
@@ -148,67 +157,80 @@ export function AppointmentDetailScreen({ navigation, route }: Props) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Animated.View style={animatedStyle}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{appointment.title}</Text>
-          <StatusBadge status={appointment.status} />
-        </View>
+    <View style={styles.wrapper}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <Animated.View style={animatedStyle}>
+          <View style={styles.clientHero}>
+            <ClientAvatar name={appointment.clientName} size={64} />
+            <Text style={styles.clientName}>{appointment.clientName}</Text>
+            <StatusBadge status={appointment.status} />
+          </View>
 
-        <Text style={styles.date}>
-          {formatAppointmentDate(appointment.appointmentDate)}
-        </Text>
+          <View style={styles.scheduleCard}>
+            <Text style={styles.serviceTitle}>{appointment.title}</Text>
+            <Text style={styles.scheduleTime}>
+              {formatAppointmentTime(appointment.appointmentDate)}
+            </Text>
+            <Text style={styles.scheduleDate}>
+              {formatAppointmentDate(appointment.appointmentDate)}
+            </Text>
+          </View>
 
-        <View style={styles.divider} />
+          <View style={styles.detailsCard}>
+            <InfoBlock
+              label="Teléfono"
+              value={appointment.clientPhone}
+              styles={styles}
+            />
+            <View style={styles.divider} />
+            <InfoBlock
+              label="Notas"
+              value={appointment.description}
+              styles={styles}
+            />
+          </View>
+        </Animated.View>
 
-        <DetailRow
-          label="Cliente"
-          value={appointment.clientName}
-          styles={styles}
-        />
-        <DetailRow
-          label="Teléfono"
-          value={appointment.clientPhone}
-          styles={styles}
-        />
-        <DetailRow
-          label="Descripción"
-          value={appointment.description}
-          styles={styles}
-        />
-      </Animated.View>
+        {error ? <Text style={styles.inlineError}>{error}</Text> : null}
+      </ScrollView>
 
-      {error ? <Text style={styles.inlineError}>{error}</Text> : null}
-
-      <View style={styles.actions}>
+      <View style={styles.footer}>
         <AppButton
-          label="Editar"
-          variant="secondary"
+          label="Editar reserva"
           onPress={() =>
             navigation.navigate('AppointmentForm', { appointmentId })
           }
           disabled={isDeleting}
         />
         <AppButton
-          label="Eliminar"
+          label="Eliminar reserva"
           variant="ghost"
           onPress={confirmDelete}
           loading={isDeleting}
         />
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
-function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
+function createStyles(
+  colors: ReturnType<typeof useTheme>['colors'],
+  bottomInset: number,
+) {
   return StyleSheet.create({
-    container: {
+    wrapper: {
       flex: 1,
       backgroundColor: colors.bg,
     },
+    container: {
+      flex: 1,
+    },
     content: {
       padding: 20,
-      paddingBottom: 40,
+      paddingBottom: 24,
     },
     centered: {
       flex: 1,
@@ -222,54 +244,83 @@ function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
       color: colors.textMuted,
       fontSize: 14,
     },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      gap: 16,
-      marginBottom: 8,
+    clientHero: {
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 24,
+      paddingVertical: 8,
     },
-    title: {
-      flex: 1,
-      fontSize: 26,
-      fontWeight: '600',
+    clientName: {
+      fontSize: 22,
+      fontWeight: '700',
       color: colors.text,
-      letterSpacing: -0.4,
-      lineHeight: 32,
+      letterSpacing: -0.3,
     },
-    date: {
+    scheduleCard: {
+      backgroundColor: colors.bgCard,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 18,
+      marginBottom: 16,
+      gap: 4,
+    },
+    serviceTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    scheduleTime: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: colors.text,
+      fontVariant: ['tabular-nums'],
+      letterSpacing: -0.5,
+    },
+    scheduleDate: {
       fontSize: 15,
       color: colors.textMuted,
-      marginBottom: 24,
+    },
+    detailsCard: {
+      backgroundColor: colors.bgCard,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 18,
+    },
+    infoBlock: {
+      paddingVertical: 16,
+      gap: 4,
+    },
+    infoLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.textSoft,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    infoValue: {
+      fontSize: 16,
+      color: colors.text,
+      lineHeight: 22,
     },
     divider: {
       height: 1,
-      backgroundColor: colors.border,
-      marginBottom: 8,
-    },
-    row: {
-      paddingVertical: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.borderLight,
-      gap: 4,
-    },
-    rowLabel: {
-      fontSize: 13,
-      color: colors.textSoft,
-    },
-    rowValue: {
-      fontSize: 16,
-      color: colors.text,
-      fontWeight: '500',
-    },
-    actions: {
-      marginTop: 32,
-      gap: 8,
+      backgroundColor: colors.borderLight,
     },
     inlineError: {
       color: colors.danger,
       fontSize: 14,
       marginTop: 16,
+    },
+    footer: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: Math.max(bottomInset, 16),
+      gap: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.bgCard,
     },
     errorText: {
       color: colors.danger,

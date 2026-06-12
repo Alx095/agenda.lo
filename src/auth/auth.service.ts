@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { UnverifiedUsersCleanupService } from './unverified-users-cleanup.service';
 
 export type SafeUser = {
   id: string;
@@ -71,6 +72,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
+    private readonly unverifiedUsersCleanup: UnverifiedUsersCleanupService,
   ) {
     this.accessTokenExpiresIn = this.configService.getOrThrow<string>(
       'JWT_ACCESS_EXPIRES_IN',
@@ -88,7 +90,17 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new ConflictException('Email is already registered');
+      if (existingUser.emailVerified) {
+        throw new ConflictException('Email is already registered');
+      }
+
+      if (this.unverifiedUsersCleanup.isExpired(existingUser.createdAt)) {
+        await this.unverifiedUsersCleanup.deleteUnverifiedUser(existingUser.id);
+      } else {
+        throw new ConflictException(
+          'Este correo ya está registrado. Revisa tu bandeja de entrada o espera unos minutos para volver a intentar.',
+        );
+      }
     }
 
     const hashedPassword = await bcrypt.hash(

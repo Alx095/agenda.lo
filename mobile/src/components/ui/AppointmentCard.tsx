@@ -2,37 +2,49 @@ import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Appointment } from '../../types/appointment';
 import { useTheme } from '../../theme/ThemeContext';
-import {
-  formatAppointmentDay,
-  formatAppointmentTime,
-} from '../../utils/formatDate';
+import { formatAppointmentTime } from '../../utils/formatDate';
+import { ClientAvatar } from './ClientAvatar';
 import { StatusBadge } from './StatusBadge';
 
 type Props = {
   appointment: Appointment;
   onPress: () => void;
+  variant?: 'default' | 'timeline';
 };
 
-export function AppointmentCard({ appointment, onPress }: Props) {
-  const { colors } = useTheme();
+export function AppointmentCard({
+  appointment,
+  onPress,
+  variant = 'default',
+}: Props) {
+  const { colors, statusTheme } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const statusAccent = statusTheme[appointment.status].accent;
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.card,
+        variant === 'timeline' && styles.timelineCard,
+        pressed && styles.pressed,
+      ]}
       onPress={onPress}
     >
-      <View style={styles.timeCol}>
-        <Text style={styles.time}>{formatAppointmentTime(appointment.appointmentDate)}</Text>
-        <Text style={styles.day}>{formatAppointmentDay(appointment.appointmentDate)}</Text>
-      </View>
-      <View style={styles.divider} />
+      <View style={[styles.statusBar, { backgroundColor: statusAccent }]} />
+
+      <ClientAvatar name={appointment.clientName} size={44} />
+
       <View style={styles.body}>
-        <Text style={styles.title} numberOfLines={1}>
+        <View style={styles.titleRow}>
+          <Text style={styles.clientName} numberOfLines={1}>
+            {appointment.clientName}
+          </Text>
+          <Text style={styles.time}>
+            {formatAppointmentTime(appointment.appointmentDate)}
+          </Text>
+        </View>
+        <Text style={styles.service} numberOfLines={1}>
           {appointment.title}
-        </Text>
-        <Text style={styles.client} numberOfLines={1}>
-          {appointment.clientName}
         </Text>
         <StatusBadge status={appointment.status} compact />
       </View>
@@ -42,58 +54,56 @@ export function AppointmentCard({ appointment, onPress }: Props) {
 
 function createStyles(colors: ReturnType<typeof useTheme>['colors']) {
   return StyleSheet.create({
-    row: {
+    card: {
       flexDirection: 'row',
-      alignItems: 'stretch',
+      alignItems: 'center',
+      gap: 12,
       backgroundColor: colors.bgCard,
-      borderRadius: 8,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
+      paddingVertical: 14,
+      paddingRight: 14,
+      paddingLeft: 0,
       overflow: 'hidden',
+    },
+    timelineCard: {
+      marginLeft: 0,
     },
     pressed: {
       backgroundColor: colors.borderLight,
     },
-    timeCol: {
-      width: 72,
-      paddingVertical: 14,
-      paddingHorizontal: 10,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.bg,
-    },
-    time: {
-      fontSize: 15,
-      fontWeight: '600',
-      color: colors.text,
-      fontVariant: ['tabular-nums'],
-    },
-    day: {
-      fontSize: 11,
-      color: colors.textSoft,
-      marginTop: 2,
-      textAlign: 'center',
-    },
-    divider: {
-      width: 1,
-      backgroundColor: colors.border,
+    statusBar: {
+      width: 4,
+      alignSelf: 'stretch',
+      borderTopLeftRadius: 12,
+      borderBottomLeftRadius: 12,
     },
     body: {
       flex: 1,
-      paddingVertical: 14,
-      paddingHorizontal: 14,
       gap: 4,
-      justifyContent: 'center',
     },
-    title: {
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    clientName: {
+      flex: 1,
       fontSize: 16,
-      fontWeight: '600',
+      fontWeight: '700',
       color: colors.text,
     },
-    client: {
+    time: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.textMuted,
+      fontVariant: ['tabular-nums'],
+    },
+    service: {
       fontSize: 14,
       color: colors.textMuted,
-      marginBottom: 2,
     },
   });
 }

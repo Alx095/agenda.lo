@@ -1,58 +1,68 @@
+import { useFocusEffect } from '@react-navigation/native';
+import { CompositeScreenProps } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getAppointments } from '../../api/appointments';
-import { useAuth } from '../../auth/AuthContext';
 import { useBusiness } from '../../business/BusinessContext';
-import { AppButton } from '../../components/ui/AppButton';
-import { AppScreen } from '../../components/ui/AppScreen';
-import { StatusBadge } from '../../components/ui/StatusBadge';
-import { ThemeToggle } from '../../components/ui/ThemeToggle';
+import { AppointmentCard } from '../../components/ui/AppointmentCard';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { FabButton } from '../../components/ui/FabButton';
 import { Appointment } from '../../types/appointment';
-import { AppStackParamList } from '../../types/navigation.types';
+import { AppStackParamList, MainTabParamList } from '../../types/navigation.types';
 import { useTheme } from '../../theme/ThemeContext';
-import {
-  formatAppointmentDate,
-  formatAppointmentTime,
-} from '../../utils/formatDate';
+import { formatTodayHeader } from '../../utils/formatDate';
+import { filterTodayAppointments } from '../../utils/groupAppointments';
 
-type Props = NativeStackScreenProps<AppStackParamList, 'Home'>;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, 'Today'>,
+  NativeStackScreenProps<AppStackParamList>
+>;
 
 export function HomeScreen({ navigation }: Props) {
   const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-  const { user, logout, isSubmitting } = useAuth();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(
+    () => createStyles(colors, insets.top),
+    [colors, insets.top],
+  );
   const {
     selectedBusiness,
-    businesses,
     selectedBusinessId,
     isLoading: isBusinessLoading,
     error: businessError,
-    selectBusiness,
     refreshBusinesses,
   } = useBusiness();
 
-  const [nextAppointment, setNextAppointment] = useState<Appointment | null>(null);
-  const [todayCount, setTodayCount] = useState(0);
-  const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const canManage = Boolean(selectedBusiness?.id);
-  const firstName = (user?.name ?? 'Usuario').split(' ')[0];
+  const canManage = Boolean(selectedBusinessId);
 
-  const loadOverview = useCallback(async () => {
+  const loadToday = useCallback(async (refreshing = false) => {
     if (!selectedBusinessId) {
-      setNextAppointment(null);
-      setTodayCount(0);
+      setTodayAppointments([]);
+      setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 
-    setIsStatsLoading(true);
+    if (refreshing) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
 
     try {
       const response = await getAppointments({
@@ -60,52 +70,67 @@ export function HomeScreen({ navigation }: Props) {
         sort: 'asc',
         limit: 100,
       });
-
-      const now = new Date();
-      const startOfDay = new Date(now);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(now);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      const today = response.data.filter((item) => {
-        const d = new Date(item.appointmentDate);
-        return d >= startOfDay && d <= endOfDay;
-      });
-
-      const upcoming = response.data.filter(
-        (item) => new Date(item.appointmentDate).getTime() >= now.getTime(),
-      );
-
-      setTodayCount(today.length);
-      setNextAppointment(upcoming[0] ?? null);
+      setTodayAppointments(filterTodayAppointments(response.data));
     } catch {
-      setNextAppointment(null);
-      setTodayCount(0);
+      setTodayAppointments([]);
     } finally {
-      setIsStatsLoading(false);
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, [selectedBusinessId]);
 
-  useEffect(() => {
-    void loadOverview();
-  }, [loadOverview]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadToday();
+    }, [loadToday]),
+  );
+
+  const renderTimelineItem = useCallback(
+    ({ item, index }: { item: Appointment; index: number }) => {
+      const isLast = index === todayAppointments.length - 1;
+
+      return (
+        <View style={styles.timelineRow}>
+          <View style={styles.timelineRail}>
+            <View style={styles.timelineDot} />
+            {!isLast ? <View style={styles.timelineLine} /> : null}
+          </View>
+          <View style={styles.timelineCard}>
+            <AppointmentCard
+              appointment={item}
+              variant="timeline"
+              onPress={() =>
+                navigation.navigate('AppointmentDetail', {
+                  appointmentId: item.id,
+                })
+              }
+            />
+          </View>
+        </View>
+      );
+    },
+    [navigation, styles, todayAppointments.length],
+  );
 
   return (
-    <AppScreen scroll contentStyle={styles.content}>
-      <View style={styles.top}>
-        <Text style={styles.wordmark}>Agenda.lo</Text>
-        <Text style={styles.greeting}>Buenos días, {firstName}</Text>
-        {selectedBusiness ? (
-          <Text style={styles.business}>{selectedBusiness.name}</Text>
-        ) : null}
-      </View>
-
-      {isBusinessLoading ? (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator color={colors.text} size="small" />
-          <Text style={styles.muted}>Cargando…</Text>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View style={styles.headerText}>
+            <Text style={styles.dateTitle}>{formatTodayHeader()}</Text>
+            {selectedBusiness ? (
+              <Text style={styles.businessName}>{selectedBusiness.name}</Text>
+            ) : null}
+          </View>
+          <View style={styles.countBadge}>
+            <Text style={styles.countValue}>{todayAppointments.length}</Text>
+            <Text style={styles.countLabel}>
+              {todayAppointments.length === 1 ? 'reserva' : 'reservas'}
+            </Text>
+          </View>
         </View>
-      ) : null}
+        <Text style={styles.headerSubtitle}>Agenda del día</Text>
+      </View>
 
       {businessError ? (
         <View style={styles.errorBox}>
@@ -116,229 +141,185 @@ export function HomeScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {businesses.length > 1 ? (
-        <View style={styles.businessPicker}>
-          {businesses.map((business) => {
-            const active = business.id === selectedBusiness?.id;
-            return (
-              <Pressable
-                key={business.id}
-                style={[styles.businessOption, active && styles.businessOptionActive]}
-                onPress={() => selectBusiness(business.id)}
-              >
-                <Text
-                  style={[
-                    styles.businessOptionText,
-                    active && styles.businessOptionTextActive,
-                  ]}
-                >
-                  {business.name}
-                </Text>
-              </Pressable>
-            );
-          })}
+      {(isLoading || isBusinessLoading) && todayAppointments.length === 0 ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="small" color={colors.text} />
+          <Text style={styles.loadingText}>Cargando agenda…</Text>
         </View>
-      ) : null}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Hoy</Text>
-        <Text style={styles.sectionValue}>
-          {isStatsLoading ? '…' : `${todayCount} ${todayCount === 1 ? 'cita' : 'citas'}`}
-        </Text>
-      </View>
-
-      {nextAppointment ? (
-        <Pressable
-          style={styles.nextBlock}
-          onPress={() =>
-            navigation.navigate('AppointmentDetail', {
-              appointmentId: nextAppointment.id,
-            })
+      ) : (
+        <FlatList
+          data={todayAppointments}
+          keyExtractor={(item) => item.id}
+          renderItem={renderTimelineItem}
+          contentContainerStyle={
+            todayAppointments.length === 0
+              ? styles.emptyList
+              : styles.listContent
           }
-        >
-          <View style={styles.nextHeader}>
-            <Text style={styles.nextLabel}>Próxima cita</Text>
-            <StatusBadge status={nextAppointment.status} compact />
-          </View>
-          <Text style={styles.nextTitle}>{nextAppointment.title}</Text>
-          <Text style={styles.nextMeta}>
-            {formatAppointmentTime(nextAppointment.appointmentDate)}
-            {' · '}
-            {nextAppointment.clientName}
-          </Text>
-          <Text style={styles.nextFullDate}>
-            {formatAppointmentDate(nextAppointment.appointmentDate)}
-          </Text>
-        </Pressable>
-      ) : !isStatsLoading && canManage ? (
-        <Text style={styles.muted}>No tienes citas próximas.</Text>
-      ) : null}
-
-      <View style={styles.actions}>
-        <AppButton
-          label="Ver agenda"
-          onPress={() => navigation.navigate('AppointmentList')}
-          disabled={!canManage}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => void loadToday(true)}
+              tintColor={colors.textMuted}
+            />
+          }
+          ListEmptyComponent={
+            canManage ? (
+              <EmptyState
+                title="Sin reservas hoy"
+                subtitle="Tu calendario está libre. Crea una reserva para empezar el día."
+                actionLabel="Nueva reserva"
+                onAction={() => navigation.navigate('AppointmentForm')}
+              />
+            ) : (
+              <Text style={styles.muted}>Configura tu negocio para ver la agenda.</Text>
+            )
+          }
         />
-        <AppButton
-          label="Nueva cita"
-          variant="secondary"
+      )}
+
+      {canManage ? (
+        <FabButton
+          label="Nueva reserva"
           onPress={() => navigation.navigate('AppointmentForm')}
-          disabled={!canManage}
         />
-      </View>
-
-      <ThemeToggle />
-
-      <Pressable
-        style={styles.logout}
-        onPress={() => void logout()}
-        disabled={isSubmitting}
-      >
-        <Text style={styles.logoutText}>
-          {isSubmitting ? 'Cerrando sesión…' : 'Cerrar sesión'}
-        </Text>
-      </Pressable>
-    </AppScreen>
+      ) : null}
+    </View>
   );
 }
 
-const createStyles = (colors: ReturnType<typeof useTheme>['colors']) =>
-  StyleSheet.create({
-    content: {
-      paddingTop: 8,
-      paddingBottom: 40,
+function createStyles(
+  colors: ReturnType<typeof useTheme>['colors'],
+  topInset: number,
+) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.bg,
     },
-    top: {
-      marginBottom: 28,
+    header: {
+      paddingTop: topInset + 12,
+      paddingHorizontal: 20,
+      paddingBottom: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.bgCard,
+    },
+    headerTop: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 16,
+    },
+    headerText: {
+      flex: 1,
       gap: 4,
     },
-    wordmark: {
+    dateTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.text,
+      letterSpacing: -0.4,
+      textTransform: 'capitalize',
+    },
+    businessName: {
+      fontSize: 14,
+      color: colors.textMuted,
+    },
+    countBadge: {
+      alignItems: 'center',
+      minWidth: 56,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    countValue: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    countLabel: {
+      fontSize: 11,
+      color: colors.textSoft,
+    },
+    headerSubtitle: {
+      marginTop: 10,
       fontSize: 13,
       fontWeight: '600',
-      color: colors.primary,
-      marginBottom: 12,
-    },
-    greeting: {
-      fontSize: 28,
-      fontWeight: '600',
-      color: colors.text,
-      letterSpacing: -0.5,
-    },
-    business: {
-      fontSize: 15,
-      color: colors.textMuted,
-      marginTop: 4,
-    },
-    loadingRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      marginBottom: 16,
-    },
-    muted: {
-      fontSize: 15,
-      color: colors.textMuted,
-      lineHeight: 22,
+      color: colors.textSoft,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
     },
     errorBox: {
+      marginHorizontal: 20,
+      marginTop: 12,
+      paddingLeft: 12,
       borderLeftWidth: 3,
       borderLeftColor: colors.danger,
-      paddingLeft: 12,
-      marginBottom: 20,
       gap: 6,
     },
     errorText: {
-      fontSize: 14,
       color: colors.danger,
+      fontSize: 14,
     },
     errorLink: {
       fontSize: 14,
       fontWeight: '600',
       color: colors.text,
     },
-    businessPicker: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginBottom: 24,
-    },
-    businessOption: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 6,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    businessOptionActive: {
-      backgroundColor: colors.text,
-      borderColor: colors.text,
-    },
-    businessOptionText: {
-      fontSize: 13,
-      fontWeight: '500',
-      color: colors.textMuted,
-    },
-    businessOptionTextActive: {
-      color: colors.textInverse,
-    },
-    section: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      justifyContent: 'space-between',
-      paddingVertical: 16,
-      borderTopWidth: 1,
-      borderBottomWidth: 1,
-      borderColor: colors.border,
-      marginBottom: 20,
-    },
-    sectionLabel: {
-      fontSize: 15,
-      color: colors.textMuted,
-    },
-    sectionValue: {
-      fontSize: 15,
-      fontWeight: '600',
-      color: colors.text,
-    },
-    nextBlock: {
-      marginBottom: 28,
-      gap: 6,
-    },
-    nextHeader: {
-      flexDirection: 'row',
+    centered: {
+      flex: 1,
       alignItems: 'center',
-      justifyContent: 'space-between',
+      justifyContent: 'center',
+      gap: 12,
     },
-    nextLabel: {
-      fontSize: 13,
-      fontWeight: '500',
-      color: colors.textSoft,
+    loadingText: {
+      color: colors.textMuted,
+      fontSize: 14,
     },
-    nextTitle: {
-      fontSize: 20,
-      fontWeight: '600',
-      color: colors.text,
-      letterSpacing: -0.2,
+    listContent: {
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: 100,
     },
-    nextMeta: {
+    emptyList: {
+      flexGrow: 1,
+      paddingHorizontal: 20,
+      paddingBottom: 100,
+    },
+    muted: {
       fontSize: 15,
       color: colors.textMuted,
+      textAlign: 'center',
+      paddingTop: 40,
     },
-    nextFullDate: {
-      fontSize: 14,
-      color: colors.textSoft,
+    timelineRow: {
+      flexDirection: 'row',
+      marginBottom: 4,
     },
-    actions: {
-      gap: 10,
-      marginBottom: 24,
+    timelineRail: {
+      width: 24,
+      alignItems: 'center',
+      paddingTop: 18,
     },
-    logout: {
-      alignSelf: 'center',
-      paddingVertical: 12,
+    timelineDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: colors.primary,
     },
-    logoutText: {
-      fontSize: 14,
-      color: colors.textSoft,
+    timelineLine: {
+      flex: 1,
+      width: 2,
+      backgroundColor: colors.border,
+      marginTop: 4,
+    },
+    timelineCard: {
+      flex: 1,
+      paddingBottom: 12,
     },
   });
+}
